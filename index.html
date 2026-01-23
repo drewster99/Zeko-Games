@@ -164,6 +164,7 @@
             <div id="powerups"></div>
             <div id="glitchWarning" class="hidden" style="color: #f00; font-size: 18px;">⚠️ REALITY UNSTABLE ⚠️</div>
             <div id="bossWarning" class="hidden" style="color: #ff0; font-size: 20px; margin-top: 10px;">⚠️ BOSS BATTLE ⚠️</div>
+            <div id="miniGameWarning" class="hidden" style="color: #0ff; font-size: 20px; margin-top: 10px;">🎮 MINI GAME 🎮</div>
         </div>
 
         <div id="startScreen">
@@ -294,7 +295,8 @@
             rapidFire: 0,
             zeroGravity: 0,
             bigBoy: 0,
-            enemySleep: 0
+            enemySleep: 0,
+            invincibility: false
         };
 
         // Canvas Setup
@@ -695,10 +697,126 @@
             }
         }
 
+        // Mini Game Generator
+        function generateMiniGame(levelNum) {
+            // Rotate through different mini game types
+            const miniGameType = Math.floor((levelNum / 5) % 4);
+
+            const levelWidth = 1200;
+            const platforms = [];
+            const enemies = [];
+            const collectibles = [];
+            const powerupItems = [];
+            const healthPickups = [];
+
+            // Ground platform
+            const groundY = HEIGHT - PLATFORM_Y_INCREMENT;
+            platforms.push({ x: 0, y: groundY, width: levelWidth, height: PLATFORM_Y_INCREMENT });
+
+            switch (miniGameType) {
+                case 0: // Target Shooting Gallery
+                    // Static targets at various heights
+                    for (let i = 0; i < 8; i++) {
+                        const targetX = 200 + i * 120;
+                        const targetY = 400 + Math.sin(i) * 100;
+                        enemies.push(new Enemy({
+                            x: targetX,
+                            y: targetY,
+                            vx: 0,
+                            health: 1,
+                            type: 'target',
+                            enemyType: 'normal',
+                            isTarget: true
+                        }));
+                    }
+                    // Add some platforms for vertical movement
+                    platforms.push({ x: 400, y: 600, width: 400, height: PLATFORM_HEIGHT });
+                    platforms.push({ x: 200, y: 500, width: 200, height: PLATFORM_HEIGHT });
+                    platforms.push({ x: 800, y: 500, width: 200, height: PLATFORM_HEIGHT });
+                    break;
+
+                case 1: // Collectible Rush - collect as many as possible
+                    // Tons of collectibles scattered around
+                    for (let i = 0; i < 50; i++) {
+                        collectibles.push({
+                            x: 100 + Math.random() * 1000,
+                            y: 300 + Math.random() * 300
+                        });
+                    }
+                    // Platforms to reach them
+                    for (let i = 0; i < 6; i++) {
+                        platforms.push({
+                            x: i * 200,
+                            y: 650 - i * 50,
+                            width: PLATFORM_WIDTH_UNIT * 2,
+                            height: PLATFORM_HEIGHT
+                        });
+                    }
+                    platforms.push({ x: 300, y: 450, width: PLATFORM_WIDTH_UNIT * 6, height: PLATFORM_HEIGHT });
+                    break;
+
+                case 2: // Survival Wave - defeat all enemies
+                    // Multiple waves of enemies
+                    for (let i = 0; i < 12; i++) {
+                        const enemyX = 200 + (i % 4) * 250;
+                        const enemyY = groundY - 60;
+                        enemies.push(new Enemy({
+                            x: enemyX,
+                            y: enemyY,
+                            vx: (Math.random() - 0.5) * 3,
+                            health: 2,
+                            type: 'ground',
+                            enemyType: i % 3 === 0 ? 'fast' : (i % 3 === 1 ? 'jumper' : 'normal')
+                        }));
+                    }
+                    // Some cover platforms
+                    platforms.push({ x: 250, y: 600, width: PLATFORM_WIDTH_UNIT * 2, height: PLATFORM_HEIGHT });
+                    platforms.push({ x: 600, y: 550, width: PLATFORM_WIDTH_UNIT * 3, height: PLATFORM_HEIGHT });
+                    platforms.push({ x: 950, y: 600, width: PLATFORM_WIDTH_UNIT * 2, height: PLATFORM_HEIGHT });
+                    // Powerups for the challenge
+                    powerupItems.push({ x: 600, y: 500, type: 'rapidFire' });
+                    powerupItems.push({ x: 300, y: 550, type: 'doubleJump' });
+                    break;
+
+                case 3: // Platforming Challenge - reach the goal quickly
+                    // Vertical platforming gauntlet
+                    let y = groundY;
+                    for (let i = 0; i < 12; i++) {
+                        const x = (i % 2 === 0) ? 200 : 800;
+                        y -= 60;
+                        platforms.push({
+                            x: x,
+                            y: y,
+                            width: PLATFORM_WIDTH_UNIT * 3,
+                            height: PLATFORM_HEIGHT
+                        });
+                        // Add collectibles as guides
+                        collectibles.push({ x: x + PLATFORM_WIDTH_UNIT * 1.5, y: y - 40 });
+                    }
+                    // Add some moving platforms (simulated with enemies)
+                    platforms.push({ x: 500, y: 400, width: PLATFORM_WIDTH_UNIT * 2, height: PLATFORM_HEIGHT });
+                    platforms.push({ x: 100, y: 300, width: PLATFORM_WIDTH_UNIT * 2, height: PLATFORM_HEIGHT });
+                    platforms.push({ x: 900, y: 300, width: PLATFORM_WIDTH_UNIT * 2, height: PLATFORM_HEIGHT });
+                    // Powerups to help
+                    powerupItems.push({ x: 500, y: 350, type: 'doubleJump' });
+                    break;
+            }
+
+            // Goal at the end (always present in mini games)
+            const goal = { x: levelWidth - 200, y: groundY - 100, width: 80, height: 100 };
+
+            return { platforms, enemies, collectibles, powerupItems, healthPickups, goal, width: levelWidth, isMiniGame: true, miniGameType };
+        }
+
         // Level Generator
         function generateLevel(levelNum) {
-            // Boss level - special arena
-            if (levelNum === 8) {
+            // Mini game levels (every 5 levels, but not boss levels)
+            if (levelNum % 5 === 0 && levelNum % 10 !== 0) {
+                return generateMiniGame(levelNum);
+            }
+
+            // Boss level - special arena (every 10 levels)
+            if (levelNum % 10 === 0) {
                 const levelWidth = 1200;
                 const platforms = [];
                 const enemies = [];
@@ -731,6 +849,8 @@
                 powerupItems.push({ x: 300, y: 450, type: 'shield' });
                 powerupItems.push({ x: 900, y: 450, type: 'rapidFire' });
                 powerupItems.push({ x: 600, y: 450, type: 'doubleJump' });
+                powerupItems.push({ x: 150, y: 350, type: 'invincibility' });
+                powerupItems.push({ x: 1050, y: 350, type: 'invincibility' });
 
                 // Health pickups for boss fight
                 healthPickups.push({ x: 200, y: 550 });
@@ -739,14 +859,14 @@
                 // No goal in boss level - defeating boss completes the level
                 const goal = null;
 
-                // Create the boss
-                boss = new Boss(600, 400);
+                // Create the boss (health scales with level)
+                boss = new Boss(600, 400, levelNum);
 
                 return { platforms, enemies, collectibles, powerupItems, healthPickups, goal, width: levelWidth };
             }
 
-            // Regular levels
-            const levelWidth = 4000 + levelNum * 1000;
+            // Regular levels (cap width at level 20 equivalent to prevent extremely long levels)
+            const levelWidth = 4000 + Math.min(levelNum, 20) * 1000;
             const platforms = [];
             const enemies = [];
             const collectibles = [];
@@ -791,14 +911,46 @@
 
                 platforms.push({ x, y, width, height: PLATFORM_HEIGHT });
 
-                // Add enemies on platforms
-                if (Math.random() < 0.3 + levelNum * 0.1) {
+                // Add enemies on platforms (cap spawn rate at 0.8 and health at 10)
+                const spawnRate = Math.min(0.3 + levelNum * 0.05, 0.8);
+                if (Math.random() < spawnRate) {
+                    // Choose enemy type based on level
+                    let enemyType = 'normal';
+                    const rand = Math.random();
+
+                    if (levelNum >= 5) {
+                        // Level 5+: All enemy types available
+                        if (rand < 0.2) enemyType = 'fast';
+                        else if (rand < 0.35) enemyType = 'tank';
+                        else if (rand < 0.5) enemyType = 'flyer';
+                        else if (rand < 0.65) enemyType = 'jumper';
+                        else if (rand < 0.8) enemyType = 'shooter';
+                        else enemyType = 'normal';
+                    } else if (levelNum >= 3) {
+                        // Level 3-4: Some variety
+                        if (rand < 0.3) enemyType = 'fast';
+                        else if (rand < 0.5) enemyType = 'jumper';
+                        else if (rand < 0.7) enemyType = 'flyer';
+                        else enemyType = 'normal';
+                    } else {
+                        // Level 1-2: Mostly normal
+                        if (rand < 0.3) enemyType = 'fast';
+                        else enemyType = 'normal';
+                    }
+
+                    // Health scales with level but is capped
+                    const baseHealth = Math.min(1 + Math.floor(levelNum / 3), 10);
+                    const health = enemyType === 'tank' ? baseHealth * 2 :
+                                   enemyType === 'fast' ? Math.max(1, Math.floor(baseHealth * 0.6)) :
+                                   baseHealth;
+
                     enemies.push(new Enemy({
                         x: x + width / 2,
                         y: y - 40,
                         vx: (Math.random() - 0.5) * 2,
-                        health: levelNum,
-                        type: levelNum > 2 ? 'flying' : 'ground'
+                        health: health,
+                        type: 'ground',
+                        enemyType: enemyType
                     }));
                 }
 
@@ -813,9 +965,10 @@
                 prevY = y;
             }
 
-            // Add power-ups on or near platforms
-            const powerupTypes = ['speed', 'doubleJump', 'shield', 'rapidFire', 'zeroGravity', 'bigBoy', 'enemySleep'];
-            for (let i = 0; i < levelNum + 2; i++) {
+            // Add power-ups on or near platforms (cap at 12 powerups per level)
+            const powerupTypes = ['speed', 'doubleJump', 'shield', 'rapidFire', 'zeroGravity', 'bigBoy', 'enemySleep', 'invincibility'];
+            const numPowerups = Math.min(levelNum + 2, 12);
+            for (let i = 0; i < numPowerups; i++) {
                 // Pick a random platform (skip the ground)
                 const platformIndex = 1 + Math.floor(Math.random() * (platforms.length - 1));
                 const platform = platforms[platformIndex];
@@ -1052,6 +1205,38 @@
                     }
                 }
 
+                // Invincibility effect - rainbow glow
+                if (powerups.invincibility) {
+                    const pulseTime = gameTime / 800;
+                    const pulse = Math.sin(pulseTime * 4) * 0.15 + 0.85;
+                    const rotation = pulseTime * 3;
+                    const hue = (gameTime / 20) % 360;
+
+                    // Outer rainbow glow (rotating hues)
+                    for (let i = 0; i < 3; i++) {
+                        const offset = i * 120;
+                        ctx.strokeStyle = `hsla(${(hue + offset) % 360}, 100%, 70%, ${0.3 * pulse})`;
+                        ctx.lineWidth = 6 - i * 2;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, this.size * (1.3 - i * 0.1) * pulse, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+
+                    // Rotating star pattern
+                    ctx.save();
+                    ctx.rotate(rotation);
+                    for (let s = 0; s < 8; s++) {
+                        const angle = (Math.PI / 4) * s;
+                        const x = Math.cos(angle) * this.size;
+                        const y = Math.sin(angle) * this.size;
+                        ctx.fillStyle = `hsla(${(hue + s * 45) % 360}, 100%, 80%, 0.6)`;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 3, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                }
+
                 // Shadow - gets smaller and fainter with height
                 const shadowScale = Math.max(0.3, 1 - distanceToGround / 200);
                 const shadowAlpha = Math.max(0.1, shadowScale * 0.4);
@@ -1102,15 +1287,25 @@
                 this.muzzleFlash = 1.0;
                 playSound('shoot');
 
+                // Add random angle variation up to 7 degrees
+                const maxAngleDegrees = 7;
+                const angleRadians = (Math.random() * 2 - 1) * maxAngleDegrees * (Math.PI / 180);
+                const speed = 25;
+
                 return {
                     x: this.x + (this.size * this.facingDirection),
                     y: this.y,
-                    vx: 25 * this.facingDirection,
+                    vx: speed * Math.cos(angleRadians) * this.facingDirection,
+                    vy: speed * Math.sin(angleRadians),
                     size: 8
                 };
             }
 
             takeDamage() {
+                if (powerups.invincibility) {
+                    // Invincible - no damage at all
+                    return false;
+                }
                 if (powerups.shield) {
                     powerups.shield = false;
                     updatePowerupDisplay();
@@ -1126,50 +1321,140 @@
                 this.y = data.y;
                 this.vx = data.vx;
                 this.health = data.health;
-                this.type = data.type;
-                this.size = 50;
+                this.type = data.type || 'normal';
+                this.enemyType = data.enemyType || 'normal'; // normal, fast, tank, flyer, jumper, shooter
+                this.size = data.size || (this.enemyType === 'tank' ? 70 : this.enemyType === 'fast' ? 35 : 50);
                 this.angle = 0;
+                this.shootCooldown = 0;
+                this.jumpTimer = 0;
+                this.vy = 0;
+                this.isMinion = data.isMinion || false;
+                this.isTarget = data.isTarget || false;
+
+                // Type-specific properties
+                if (this.enemyType === 'flyer') {
+                    this.flyAngle = Math.random() * Math.PI * 2;
+                    this.baseY = this.y;
+                }
             }
 
             update(dt, platforms, player) {
-                // Check if sleeping
-                if (this.sleeping) {
-                    return; // Don't move or chase while sleeping
+                // Check if sleeping or if it's a static target
+                if (this.sleeping || this.isTarget) {
+                    return; // Don't move or chase while sleeping or if target
                 }
 
-                // Move toward player
                 const dx = player.x - this.x;
-                const distance = Math.abs(dx);
+                const dy = player.y - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
 
-                // Only chase if player is within range
-                if (distance < 600) {
-                    if (dx > 0) {
-                        this.vx = 1.5; // Move right toward player
-                    } else {
-                        this.vx = -1.5; // Move left toward player
-                    }
-                } else {
-                    this.vx *= 0.95; // Slow down if player is far
+                // Type-specific behavior
+                switch (this.enemyType) {
+                    case 'fast':
+                        // Fast runner - moves quickly toward player
+                        if (distance < 800) {
+                            this.vx = dx > 0 ? 3.5 : -3.5;
+                        } else {
+                            this.vx *= 0.95;
+                        }
+                        break;
+
+                    case 'tank':
+                        // Tank - slow but steady
+                        if (distance < 400) {
+                            this.vx = dx > 0 ? 0.8 : -0.8;
+                        } else {
+                            this.vx *= 0.9;
+                        }
+                        break;
+
+                    case 'flyer':
+                        // Flyer - ignores gravity, flies in circular patterns
+                        this.flyAngle += dt * 2;
+                        const targetY = this.baseY + Math.sin(this.flyAngle) * 80;
+                        const targetX = this.x + Math.cos(this.flyAngle) * 2;
+
+                        if (distance < 600) {
+                            this.vx = dx > 0 ? 2 : -2;
+                        } else {
+                            this.vx = Math.cos(this.flyAngle) * 1.5;
+                        }
+                        this.vy = (targetY - this.y) * 0.1;
+                        break;
+
+                    case 'jumper':
+                        // Jumper - hops toward player
+                        this.jumpTimer -= dt;
+                        if (this.jumpTimer <= 0 && this.vy === 0) {
+                            this.vy = -12;
+                            this.vx = dx > 0 ? 3 : -3;
+                            this.jumpTimer = 1.5;
+                        }
+                        this.vx *= 0.98;
+                        break;
+
+                    case 'shooter':
+                        // Shooter - keeps distance and shoots
+                        this.shootCooldown -= dt;
+                        if (distance < 500 && distance > 200) {
+                            // Stay at distance
+                            this.vx = dx > 0 ? -1 : 1;
+                        } else if (distance < 200) {
+                            // Back away
+                            this.vx = dx > 0 ? -2 : 2;
+                        } else {
+                            this.vx *= 0.95;
+                        }
+                        break;
+
+                    default:
+                        // Normal enemy - chase player
+                        if (distance < 600) {
+                            this.vx = dx > 0 ? 1.5 : -1.5;
+                        } else {
+                            this.vx *= 0.95;
+                        }
+                        break;
                 }
 
-                // Apply gravity to all enemies
-                this.vy = this.vy || 0;
-                this.vy += GRAVITY;
-                this.y += this.vy * dt * 60;
+                // Apply gravity (except for flyers)
+                if (this.enemyType !== 'flyer') {
+                    this.vy += GRAVITY;
+                    this.y += this.vy * dt * 60;
 
-                // Platform collision for all enemies
-                platforms.forEach(plat => {
-                    if (this.x + this.size/2 > plat.x &&
-                        this.x - this.size/2 < plat.x + plat.width &&
-                        this.y + this.size/2 > plat.y &&
-                        this.y + this.size/2 < plat.y + plat.height &&
-                        this.vy >= 0) {
-                        this.y = plat.y - this.size/2;
-                        this.vy = 0;
-                    }
-                });
+                    // Platform collision
+                    platforms.forEach(plat => {
+                        if (this.x + this.size/2 > plat.x &&
+                            this.x - this.size/2 < plat.x + plat.width &&
+                            this.y + this.size/2 > plat.y &&
+                            this.y + this.size/2 < plat.y + plat.height &&
+                            this.vy >= 0) {
+                            this.y = plat.y - this.size/2;
+                            this.vy = 0;
+                        }
+                    });
+                } else {
+                    // Flyers move vertically too
+                    this.y += this.vy * dt * 60;
+                }
 
                 this.x += this.vx * dt * 60;
+                this.angle += dt * 2;
+            }
+
+            shoot() {
+                if (this.shootCooldown > 0 || this.enemyType !== 'shooter') return null;
+
+                this.shootCooldown = 2;
+
+                return {
+                    x: this.x,
+                    y: this.y,
+                    vx: this.vx > 0 ? 8 : -8,
+                    vy: 0,
+                    size: 6,
+                    isEnemy: true
+                };
             }
 
             draw(ctx, cameraX) {
@@ -1177,6 +1462,33 @@
 
                 ctx.save();
                 ctx.translate(screenX, this.y);
+
+                // Target appearance (bullseye)
+                if (this.isTarget) {
+                    // Bullseye target
+                    ctx.fillStyle = '#fff';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size/2, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#f00';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size/2.5, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#fff';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size/4, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#f00';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size/8, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.restore();
+                    return;
+                }
 
                 // Face the direction of movement
                 if (this.vx < 0) {
@@ -1194,14 +1506,107 @@
                     ctx.fillText('z', this.size/2 + 27, -this.size/2 - 28);
                 }
 
-                // Main body
-                const color = glitchIntensity > 0 ? '#ff00ff' : '#f33';
-                ctx.fillStyle = color;
-                ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
+                // Main body - color based on type
+                let color, highlightColor;
 
-                const highlightColor = glitchIntensity > 0 ? '#ff66ff' : '#f66';
-                ctx.fillStyle = highlightColor;
-                ctx.fillRect(-this.size/3, -this.size/3, this.size/3, this.size/3);
+                if (this.isMinion) {
+                    color = '#33f';
+                    highlightColor = '#66f';
+                } else {
+                    switch (this.enemyType) {
+                        case 'fast':
+                            color = glitchIntensity > 0 ? '#ff00ff' : '#ff9900'; // Orange
+                            highlightColor = glitchIntensity > 0 ? '#ff66ff' : '#ffbb44';
+                            break;
+                        case 'tank':
+                            color = glitchIntensity > 0 ? '#ff00ff' : '#888'; // Gray
+                            highlightColor = glitchIntensity > 0 ? '#ff66ff' : '#aaa';
+                            break;
+                        case 'flyer':
+                            color = glitchIntensity > 0 ? '#ff00ff' : '#9f3'; // Green
+                            highlightColor = glitchIntensity > 0 ? '#ff66ff' : '#bf6';
+                            break;
+                        case 'jumper':
+                            color = glitchIntensity > 0 ? '#ff00ff' : '#f0f'; // Magenta
+                            highlightColor = glitchIntensity > 0 ? '#ff66ff' : '#f6f';
+                            break;
+                        case 'shooter':
+                            color = glitchIntensity > 0 ? '#ff00ff' : '#09f'; // Cyan
+                            highlightColor = glitchIntensity > 0 ? '#ff66ff' : '#6cf';
+                            break;
+                        default:
+                            color = glitchIntensity > 0 ? '#ff00ff' : '#f33'; // Red
+                            highlightColor = glitchIntensity > 0 ? '#ff66ff' : '#f66';
+                            break;
+                    }
+                }
+
+                // Draw body shape based on type
+                if (this.enemyType === 'tank') {
+                    // Tank - rectangular and bulky
+                    ctx.fillStyle = color;
+                    ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size * 0.8);
+                    ctx.fillStyle = highlightColor;
+                    ctx.fillRect(-this.size/3, -this.size/3, this.size/1.5, this.size/3);
+
+                    // Armor plates
+                    ctx.strokeStyle = '#555';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(-this.size/2, -this.size/2, this.size, this.size * 0.8);
+                } else if (this.enemyType === 'flyer') {
+                    // Flyer - round with wings
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size/2, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = highlightColor;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size/3, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Wings
+                    const wingFlap = Math.sin(this.angle * 5) * 0.3;
+                    ctx.fillStyle = color;
+                    ctx.globalAlpha = 0.7;
+                    ctx.beginPath();
+                    ctx.ellipse(-this.size/2, 0, this.size/2, this.size/4 * (1 + wingFlap), 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.ellipse(this.size/2, 0, this.size/2, this.size/4 * (1 + wingFlap), 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                } else if (this.enemyType === 'fast') {
+                    // Fast - sleek and narrow
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.moveTo(this.size/2, 0);
+                    ctx.lineTo(-this.size/3, -this.size/2);
+                    ctx.lineTo(-this.size/2, 0);
+                    ctx.lineTo(-this.size/3, this.size/2);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.fillStyle = highlightColor;
+                    ctx.fillRect(-this.size/4, -this.size/4, this.size/2, this.size/2);
+
+                    // Speed lines
+                    ctx.strokeStyle = highlightColor;
+                    ctx.lineWidth = 2;
+                    for (let i = 0; i < 3; i++) {
+                        const offset = i * 8 - 8;
+                        ctx.beginPath();
+                        ctx.moveTo(-this.size/2 - 10 - offset, -this.size/4 + i * 8);
+                        ctx.lineTo(-this.size/2 - 20 - offset, -this.size/4 + i * 8);
+                        ctx.stroke();
+                    }
+                } else {
+                    // Default square body
+                    ctx.fillStyle = color;
+                    ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
+                    ctx.fillStyle = highlightColor;
+                    ctx.fillRect(-this.size/3, -this.size/3, this.size/3, this.size/3);
+                }
 
                 // Napkin/bib around neck
                 ctx.fillStyle = '#fff';
@@ -1314,18 +1719,22 @@
         }
 
         class Boss {
-            constructor(x, y) {
+            constructor(x, y, levelNum = 10) {
                 this.x = x;
                 this.y = y;
                 this.vx = 2;
                 this.vy = 0;
                 this.size = 80;
-                this.health = 50;
-                this.maxHealth = 50;
+                // Scale health based on level: starts at 50, adds 10 per boss level
+                const bossNumber = levelNum / 10;
+                this.health = 50 + (bossNumber - 1) * 10;
+                this.maxHealth = this.health;
                 this.attackCooldown = 0;
                 this.phase = 1;
                 this.angle = 0;
                 this.jumpCooldown = 0;
+                this.minionSpawnCooldown = 0;
+                this.levelNum = levelNum;
             }
 
             update(dt, platforms, player) {
@@ -1357,6 +1766,17 @@
                         this.vy = -20;
                         this.jumpCooldown = 1;
                     }
+                }
+
+                // Keep boss within arena bounds (boss arena is 1200 wide)
+                const minX = 100;
+                const maxX = 1100;
+                if (this.x < minX) {
+                    this.x = minX;
+                    this.vx = Math.abs(this.vx); // Bounce off left wall
+                } else if (this.x > maxX) {
+                    this.x = maxX;
+                    this.vx = -Math.abs(this.vx); // Bounce off right wall
                 }
 
                 // Gravity
@@ -1394,7 +1814,32 @@
                     this.jumpCooldown -= dt;
                 }
 
+                // Minion spawn cooldown
+                if (this.minionSpawnCooldown > 0) {
+                    this.minionSpawnCooldown -= dt;
+                }
+
                 this.angle += dt * 2;
+            }
+
+            spawnMinion() {
+                if (this.minionSpawnCooldown > 0) return null;
+
+                // Spawn rate increases with phase
+                const spawnInterval = this.phase === 1 ? 5 : (this.phase === 2 ? 3 : 2);
+                this.minionSpawnCooldown = spawnInterval;
+
+                // Create a small blue minion
+                const offsetX = (Math.random() > 0.5 ? 1 : -1) * 100;
+                return new Enemy({
+                    x: this.x + offsetX,
+                    y: this.y - 100,
+                    vx: Math.random() > 0.5 ? 2 : -2,
+                    size: 25,
+                    health: 1,
+                    shootInterval: 3,
+                    isMinion: true
+                });
             }
 
             shoot() {
@@ -1429,12 +1874,12 @@
                 const pulseScale = 1 + Math.sin(this.angle * 3) * 0.05;
                 ctx.scale(pulseScale, pulseScale);
 
-                // Main body - larger and scarier
-                const phaseColors = ['#c00', '#d00', '#f00'];
+                // Main body - larger and scarier (blue colors)
+                const phaseColors = ['#00c', '#00d', '#00f'];
                 ctx.fillStyle = phaseColors[this.phase - 1];
                 ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
 
-                ctx.fillStyle = '#f44';
+                ctx.fillStyle = '#44f';
                 ctx.fillRect(-this.size/3, -this.size/3, this.size/1.5, this.size/1.5);
 
                 // Chef's uniform - white apron
@@ -1519,6 +1964,7 @@
         let particles = [];
         let projectiles = [];
         let bossProjectiles = [];
+        let enemyProjectiles = [];
 
         const keys = {};
 
@@ -1539,6 +1985,22 @@
                           !fallingIntoGoal) {
                     player.vy = JUMP_STRENGTH;
                     if (!player.onGround) player.hasDoubleJump--;
+                } else if (e.key === '5') {
+                    // Cheat code: jump to first mini game
+                    currentLevel = 4;
+                    nextLevel();
+                } else if (e.key === '8') {
+                    // Cheat code: jump to first boss level
+                    currentLevel = 9;
+                    nextLevel();
+                } else if (e.key === '9') {
+                    // Cheat code: jump to level 90 (9th boss)
+                    currentLevel = 89;
+                    nextLevel();
+                } else if (e.key === '0') {
+                    // Cheat code: jump to final boss level (100)
+                    currentLevel = 99;
+                    nextLevel();
                 }
             }
         });
@@ -1567,14 +2029,15 @@
             health = 3;
             cameraX = 0;
             fallingIntoGoal = false;
-            powerups = { speed: false, doubleJump: 0, shield: false, rapidFire: 0, zeroGravity: 0, bigBoy: 0, enemySleep: 0 };
+            powerups = { speed: false, doubleJump: 0, shield: false, rapidFire: 0, zeroGravity: 0, bigBoy: 0, enemySleep: 0, invincibility: false };
 
+            boss = null;
             player = new Player();
             level = generateLevel(currentLevel);
-            boss = null;
             particles = [];
             projectiles = [];
             bossProjectiles = [];
+            enemyProjectiles = [];
             levelStartTime = gameTime;
 
             document.getElementById('bossWarning').classList.add('hidden');
@@ -1587,7 +2050,7 @@
             document.getElementById('levelComplete').classList.add('hidden');
 
             currentLevel++;
-            if (currentLevel > 8) {
+            if (currentLevel > 100) {
                 // Win!
                 gameState = 'GAME_OVER';
                 document.getElementById('gameOverTitle').textContent = 'YOU WIN!';
@@ -1595,19 +2058,28 @@
                 return;
             }
 
-            // Show boss warning for level 8
-            if (currentLevel === 8) {
+            // Show warnings for special levels
+            if (currentLevel % 10 === 0) {
+                // Boss level
                 document.getElementById('bossWarning').classList.remove('hidden');
-            } else {
+                document.getElementById('miniGameWarning').classList.add('hidden');
+            } else if (currentLevel % 5 === 0) {
+                // Mini game level
+                document.getElementById('miniGameWarning').classList.remove('hidden');
                 document.getElementById('bossWarning').classList.add('hidden');
+            } else {
+                // Regular level
+                document.getElementById('bossWarning').classList.add('hidden');
+                document.getElementById('miniGameWarning').classList.add('hidden');
             }
 
+            boss = null;
             player = new Player();
             level = generateLevel(currentLevel);
-            boss = null;
             particles = [];
             projectiles = [];
             bossProjectiles = [];
+            enemyProjectiles = [];
             cameraX = 0;
             fallingIntoGoal = false;
             levelStartTime = gameTime;
@@ -1678,6 +2150,7 @@
             if (powerups.zeroGravity > 0) active.push('🎈Zero Gravity (' + Math.ceil(powerups.zeroGravity) + 's)');
             if (powerups.bigBoy > 0) active.push('💪Big Boy (' + Math.ceil(powerups.bigBoy) + 's)');
             if (powerups.enemySleep > 0) active.push('💤Enemy Sleep (' + Math.ceil(powerups.enemySleep) + 's)');
+            if (powerups.invincibility) active.push('✨Invincibility');
 
             document.getElementById('powerups').textContent = active.length > 0 ? 'Powers: ' + active.join(' ') : '';
         }
@@ -1810,6 +2283,15 @@
             // Update enemies
             level.enemies.forEach(e => e.update(dt, level.platforms, player));
 
+            // Enemy shooting (shooter type enemies)
+            level.enemies.forEach(e => {
+                const enemyProj = e.shoot();
+                if (enemyProj) {
+                    enemyProjectiles.push(enemyProj);
+                    playSound('shoot');
+                }
+            });
+
             // Update boss (if boss level)
             if (boss) {
                 boss.update(dt, level.platforms, player);
@@ -1820,11 +2302,21 @@
                     bossProjectiles.push(bossProj);
                     playSound('shoot');
                 }
+
+                // Boss spawning minions
+                const minion = boss.spawnMinion();
+                if (minion) {
+                    level.enemies.push(minion);
+                    playSound('powerup');
+                }
             }
 
             // Update projectiles
             projectiles.forEach(p => {
                 p.x += p.vx * dt * 60;
+                if (p.vy !== undefined) {
+                    p.y += p.vy * dt * 60;
+                }
 
                 // Add particle trail
                 if (Math.random() < 0.5) {
@@ -1843,6 +2335,20 @@
                 }
             });
             bossProjectiles = bossProjectiles.filter(p => p.x < level.width && p.x > 0);
+
+            // Update enemy projectiles
+            enemyProjectiles.forEach(p => {
+                p.x += p.vx * dt * 60;
+                if (p.vy !== undefined) {
+                    p.y += p.vy * dt * 60;
+                }
+
+                // Add cyan particle trail for enemy projectiles
+                if (Math.random() < 0.5) {
+                    particles.push(new Particle(p.x, p.y, '#0ff', p.vx * -0.1, (Math.random() - 0.5) * 2));
+                }
+            });
+            enemyProjectiles = enemyProjectiles.filter(p => p.x < level.width && p.x > 0);
 
             // Projectile-enemy collision
             projectiles.forEach(p => {
@@ -2003,6 +2509,30 @@
                 }
             });
 
+            // Enemy projectile collision with player
+            enemyProjectiles.forEach(p => {
+                if (Math.abs(p.x - player.x) < 30 && Math.abs(p.y - player.y) < 30) {
+                    p.x = -1000; // Mark for removal
+
+                    if (player.takeDamage()) {
+                        health--;
+                        updateUI();
+                        playSound('hit');
+                        screenShakeX = 20;
+                        screenShakeY = 20;
+
+                        if (health <= 0) {
+                            showGameOver();
+                        }
+                    } else {
+                        playSound('powerup');
+                        for (let i = 0; i < 15; i++) {
+                            particles.push(new Particle(p.x, p.y, '#0ff'));
+                        }
+                    }
+                }
+            });
+
             // Collectibles
             level.collectibles = level.collectibles.filter(c => {
                 if (Math.abs(c.x - player.x) < 30 && Math.abs(c.y - player.y) < 30) {
@@ -2025,19 +2555,20 @@
                     // Handle mega powerup (activates all powerups)
                     if (p.type === 'mega') {
                         powerups.speed = true;
-                        powerups.doubleJump = Math.min(powerups.doubleJump + 1, 5); // Cap at 5
+                        powerups.doubleJump = powerups.doubleJump + 1; // Stacks infinitely
                         powerups.shield = true;
                         powerups.rapidFire = 20;
                         powerups.zeroGravity = 15;
                         powerups.bigBoy = 15;
                         powerups.enemySleep = 20;
+                        powerups.invincibility = true;
 
                         // Put all enemies to sleep
                         level.enemies.forEach(e => e.sleeping = true);
                     }
                     // Handle doubleJump specially (stacks up)
                     else if (p.type === 'doubleJump') {
-                        powerups.doubleJump = Math.min(powerups.doubleJump + 1, 5); // Cap at 5 jumps max
+                        powerups.doubleJump = powerups.doubleJump + 1; // Stacks infinitely
                     }
                     // Handle timed powerups
                     else if (p.type === 'rapidFire') {
@@ -2050,6 +2581,8 @@
                         powerups.enemySleep = 20; // 20 seconds
                         // Put all enemies to sleep
                         level.enemies.forEach(e => e.sleeping = true);
+                    } else if (p.type === 'invincibility') {
+                        powerups.invincibility = true; // Lasts entire level
                     }
                     // Handle toggle powerups
                     else {
@@ -2215,7 +2748,8 @@
                         rapidFire: '🔥',
                         zeroGravity: '🎈',
                         bigBoy: '💪',
-                        enemySleep: '💤'
+                        enemySleep: '💤',
+                        invincibility: '✨'
                     };
                     ctx.font = '30px Arial';
                     ctx.textAlign = 'center';
@@ -2395,6 +2929,35 @@
 
                 // Bright center
                 ctx.fillStyle = '#ff0';
+                ctx.beginPath();
+                ctx.arc(screenX, p.y, p.size * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw enemy projectiles with cyan glow
+            enemyProjectiles.forEach(p => {
+                const screenX = p.x - cameraX;
+
+                // Outer glow
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+                ctx.beginPath();
+                ctx.arc(screenX, p.y, p.size * 1.8, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Middle glow
+                ctx.fillStyle = 'rgba(0, 200, 255, 0.6)';
+                ctx.beginPath();
+                ctx.arc(screenX, p.y, p.size * 1.2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Core
+                ctx.fillStyle = '#0ff';
+                ctx.beginPath();
+                ctx.arc(screenX, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Bright center
+                ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.arc(screenX, p.y, p.size * 0.4, 0, Math.PI * 2);
                 ctx.fill();
