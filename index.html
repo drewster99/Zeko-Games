@@ -59,13 +59,27 @@
         }
 
         .hearts {
-            font-size: 30px;
-            letter-spacing: 5px;
+            font-size: 24px;
+            letter-spacing: 3px;
         }
 
-        #powerups {
-            margin-top: 10px;
-            font-size: 16px;
+        .player-label {
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 6px;
+        }
+
+        .player-label.p1 {
+            color: #6fb33f;
+        }
+
+        .player-label.p2 {
+            color: #8b5fcf;
+        }
+
+        .player-powerups {
+            font-size: 14px;
+            margin-top: 2px;
         }
 
         #startScreen, #levelComplete, #gameOver {
@@ -158,10 +172,14 @@
         <canvas id="glitchOverlay" width="1200" height="800" class="hidden"></canvas>
 
         <div id="ui">
-            <div>Level: <span id="level">1</span>/8</div>
+            <div>Level: <span id="level">1</span>/100</div>
             <div>Score: <span id="score">0</span></div>
-            <div class="hearts" id="hearts">❤️❤️❤️</div>
-            <div id="powerups"></div>
+            <div class="player-label p1">P1</div>
+            <div class="hearts" id="hearts1">❤️❤️❤️</div>
+            <div class="player-powerups" id="powerups1"></div>
+            <div class="player-label p2">P2</div>
+            <div class="hearts" id="hearts2">❤️❤️❤️</div>
+            <div class="player-powerups" id="powerups2"></div>
             <div id="glitchWarning" class="hidden" style="color: #f00; font-size: 18px;">⚠️ REALITY UNSTABLE ⚠️</div>
             <div id="bossWarning" class="hidden" style="color: #ff0; font-size: 20px; margin-top: 10px;">⚠️ BOSS BATTLE ⚠️</div>
             <div id="miniGameWarning" class="hidden" style="color: #0ff; font-size: 20px; margin-top: 10px;">🎮 MINI GAME 🎮</div>
@@ -170,14 +188,15 @@
         <div id="startScreen">
             <h1>GREENBEAN</h1>
             <p>A Side-Scrolling Adventure</p>
-            <p style="margin-top: 30px;">🎮 WASD or Arrow Keys - Move & Jump</p>
+            <p style="margin-top: 20px;">🎮 WASD or Arrow Keys - Move & Jump</p>
             <p>🔫 X Key - Shoot enemies</p>
-            <p>🎯 Goal: Reach the end of each level!</p>
-            <p style="margin-top: 20px; font-size: 16px;">Collect power-ups: ⚡Speed 🦘Double Jump 🛡️Shield 🔥Rapid Fire</p>
+            <p style="margin-top: 10px;">🎯 Goal: Reach the end of each level!</p>
+            <p style="margin-top: 10px; font-size: 16px;">Collect power-ups: ⚡Speed 🦘Double Jump 🛡️Shield 🔥Rapid Fire</p>
             <p class="warning">⚠️ DON'T PRESS SPACEBAR ⚠️</p>
-            <p style="margin-top: 30px; font-size: 16px; opacity: 0.7;">High Score: <span id="highScore">0</span></p>
+            <p style="margin-top: 20px; font-size: 14px; color: #8b5fcf; opacity: 0.8;">Press 2 or Enter during gameplay for Player 2 drop-in!</p>
+            <p style="margin-top: 15px; font-size: 16px; opacity: 0.7;">High Score: <span id="highScore">0</span></p>
             <button class="button" onclick="startGame()">START GAME</button>
-            <p style="margin-top: 30px; font-size: 14px; opacity: 0.6;">Written by Zeko Benson<br>Copyright © 2026</p>
+            <p style="margin-top: 20px; font-size: 14px; opacity: 0.6;">Written by Zeko Benson<br>Copyright © 2026</p>
             <p style="margin-top: 15px; font-size: 12px; opacity: 0.5;">Special Thanks:<br>Marc Benson, Simeon Statam, and Andrew Benson</p>
         </div>
 
@@ -276,7 +295,6 @@
         let gameState = 'START';
         let currentLevel = 1;
         let score = 0;
-        let health = 3;
         let gameTime = 0;
         let levelStartTime = 0;
         let glitchIntensity = 0;
@@ -285,19 +303,6 @@
         let screenShakeY = 0;
         let highScore = parseInt(localStorage.getItem('greenbeanHighScore')) || 0;
         let cameraX = 0;
-        let fallingIntoGoal = false;
-
-        // Power-ups
-        let powerups = {
-            speed: false,
-            doubleJump: 0,
-            shield: false,
-            rapidFire: 0,
-            zeroGravity: 0,
-            bigBoy: 0,
-            enemySleep: 0,
-            invincibility: false
-        };
 
         // Canvas Setup
         const bgCanvas = document.getElementById('bgCanvas');
@@ -1034,8 +1039,9 @@
 
         // Game Objects
         class Player {
-            constructor() {
-                this.x = 100;
+            constructor(playerIndex, startX) {
+                this.playerIndex = playerIndex;
+                this.x = startX || (playerIndex === 0 ? 100 : 150);
                 this.y = HEIGHT - 200;
                 this.vx = 0;
                 this.vy = 0;
@@ -1046,15 +1052,42 @@
                 this.shootCooldown = 0;
                 this.facingDirection = 1;
                 this.muzzleFlash = 0;
+
+                // Per-player state
+                this.health = 3;
+                this.dead = false;
+                this.reachedGoal = false;
+                this.fallingIntoGoal = false;
+                this.powerups = {
+                    speed: false,
+                    doubleJump: 0,
+                    shield: false,
+                    rapidFire: 0,
+                    zeroGravity: 0,
+                    bigBoy: 0,
+                    enemySleep: 0,
+                    invincibility: false
+                };
+
+                // Player-specific colors
+                if (playerIndex === 0) {
+                    this.bodyColor = '#2d5016';
+                    this.highlightColor = '#6fb33f';
+                } else {
+                    this.bodyColor = '#3a1a6b';
+                    this.highlightColor = '#8b5fcf';
+                }
             }
 
             update(dt, platforms) {
+                if (this.dead) return;
+
                 // Apply velocity
                 this.x += this.vx * dt * 60;
 
                 // Apply gravity (reduced or disabled with zero gravity powerup)
-                if (powerups.zeroGravity > 0) {
-                    this.vy += GRAVITY * 0.2; // Much lighter gravity
+                if (this.powerups.zeroGravity > 0) {
+                    this.vy += GRAVITY * 0.2;
                 } else {
                     this.vy += GRAVITY;
                 }
@@ -1066,7 +1099,7 @@
                 // Platform collision - align bottom of body with platform
                 // Skip collision when falling into goal to let player fall through
                 this.onGround = false;
-                if (!fallingIntoGoal) {
+                if (!this.fallingIntoGoal) {
                     platforms.forEach(plat => {
                         if (this.x + this.size/2 > plat.x &&
                             this.x - this.size/2 < plat.x + plat.width &&
@@ -1076,7 +1109,7 @@
                             this.y = plat.y - this.size;
                             this.vy = 0;
                             this.onGround = true;
-                            this.hasDoubleJump = powerups.doubleJump;
+                            this.hasDoubleJump = this.powerups.doubleJump;
                         }
                     });
                 }
@@ -1097,7 +1130,7 @@
 
             draw(ctx, cameraX, platforms) {
                 const screenX = this.x - cameraX;
-                const bob = this.onGround ? Math.sin(this.bobPhase) * 2 : 0;
+                const bob = this.dead ? 0 : (this.onGround ? Math.sin(this.bobPhase) * 2 : 0);
 
                 // Calculate distance to nearest platform below for shadow
                 let distanceToGround = 100;
@@ -1113,8 +1146,13 @@
                 ctx.save();
                 ctx.translate(screenX, this.y);
 
+                // Ghost rendering for dead players
+                if (this.dead) {
+                    ctx.globalAlpha = 0.3;
+                }
+
                 // Apply big boy mode scaling
-                const bigBoyScale = powerups.bigBoy > 0 ? 1.5 : 1.0;
+                const bigBoyScale = this.powerups.bigBoy > 0 ? 1.5 : 1.0;
                 if (bigBoyScale !== 1.0) {
                     ctx.scale(bigBoyScale, bigBoyScale);
                 }
@@ -1148,7 +1186,7 @@
                 }
 
                 // Shield effect - multi-layered glow
-                if (powerups.shield) {
+                if (this.powerups.shield) {
                     const pulseTime = gameTime / 1000;
                     const pulse = Math.sin(pulseTime * 3) * 0.1 + 0.9;
                     const rotation = pulseTime * 2;
@@ -1206,7 +1244,7 @@
                 }
 
                 // Invincibility effect - rainbow glow
-                if (powerups.invincibility) {
+                if (this.powerups.invincibility) {
                     const pulseTime = gameTime / 800;
                     const pulse = Math.sin(pulseTime * 4) * 0.15 + 0.85;
                     const rotation = pulseTime * 3;
@@ -1252,38 +1290,54 @@
                 const bodyWidth = this.size * bodyScale;
                 const bodyHeight = this.size * 1.5 * bodyScale;
 
-                ctx.fillStyle = '#2d5016';
+                ctx.fillStyle = this.bodyColor;
                 ctx.fillRect(-bodyWidth/2, -this.size/2 + bob, bodyWidth, bodyHeight);
 
                 // Highlight
-                ctx.fillStyle = '#6fb33f';
+                ctx.fillStyle = this.highlightColor;
                 ctx.fillRect(-bodyWidth/2, -this.size/2 + bob, bodyWidth, this.size * 0.3);
 
-                // Eyes (blink occasionally when idle)
-                const isBlinking = Math.abs(this.vx) < 0.5 && Math.sin(gameTime / 3000) > 0.98;
-                const eyeHeight = isBlinking ? 2 : 5;
-
-                ctx.fillStyle = '#fff';
-                ctx.beginPath();
-                ctx.arc(-8, -5 + bob, eyeHeight, 0, Math.PI * 2);
-                ctx.arc(8, -5 + bob, eyeHeight, 0, Math.PI * 2);
-                ctx.fill();
-
-                if (!isBlinking) {
-                    ctx.fillStyle = '#000';
+                if (this.dead) {
+                    // X eyes for dead player
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 3;
                     ctx.beginPath();
-                    ctx.arc(-8, -5 + bob, 2, 0, Math.PI * 2);
-                    ctx.arc(8, -5 + bob, 2, 0, Math.PI * 2);
+                    ctx.moveTo(-12, -9 + bob); ctx.lineTo(-4, -1 + bob);
+                    ctx.moveTo(-4, -9 + bob); ctx.lineTo(-12, -1 + bob);
+                    ctx.moveTo(4, -9 + bob); ctx.lineTo(12, -1 + bob);
+                    ctx.moveTo(12, -9 + bob); ctx.lineTo(4, -1 + bob);
+                    ctx.stroke();
+                } else {
+                    // Eyes (blink occasionally when idle)
+                    const isBlinking = Math.abs(this.vx) < 0.5 && Math.sin(gameTime / 3000) > 0.98;
+                    const eyeHeight = isBlinking ? 2 : 5;
+
+                    ctx.fillStyle = '#fff';
+                    ctx.beginPath();
+                    ctx.arc(-8, -5 + bob, eyeHeight, 0, Math.PI * 2);
+                    ctx.arc(8, -5 + bob, eyeHeight, 0, Math.PI * 2);
                     ctx.fill();
+
+                    if (!isBlinking) {
+                        ctx.fillStyle = '#000';
+                        ctx.beginPath();
+                        ctx.arc(-8, -5 + bob, 2, 0, Math.PI * 2);
+                        ctx.arc(8, -5 + bob, 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+
+                if (this.dead) {
+                    ctx.globalAlpha = 1;
                 }
 
                 ctx.restore();
             }
 
             shoot() {
-                if (this.shootCooldown > 0) return null;
+                if (this.dead || this.shootCooldown > 0) return null;
 
-                this.shootCooldown = powerups.rapidFire > 0 ? 0.1 : 0.3;
+                this.shootCooldown = this.powerups.rapidFire > 0 ? 0.1 : 0.3;
                 this.muzzleFlash = 1.0;
                 playSound('shoot');
 
@@ -1302,12 +1356,12 @@
             }
 
             takeDamage() {
-                if (powerups.invincibility) {
-                    // Invincible - no damage at all
+                if (this.dead) return false;
+                if (this.powerups.invincibility) {
                     return false;
                 }
-                if (powerups.shield) {
-                    powerups.shield = false;
+                if (this.powerups.shield) {
+                    this.powerups.shield = false;
                     updatePowerupDisplay();
                     return false;
                 }
@@ -1338,15 +1392,29 @@
                 }
             }
 
-            update(dt, platforms, player) {
+            update(dt, platforms, players) {
                 // Check if sleeping or if it's a static target
                 if (this.sleeping || this.isTarget) {
-                    return; // Don't move or chase while sleeping or if target
+                    return;
                 }
 
-                const dx = player.x - this.x;
-                const dy = player.y - this.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
+                // Find nearest alive player
+                const playersArr = Array.isArray(players) ? players : [players];
+                let nearestPlayer = null;
+                let nearestDist = Infinity;
+                playersArr.forEach(p => {
+                    if (p.dead) return;
+                    const d = Math.sqrt((p.x - this.x) ** 2 + (p.y - this.y) ** 2);
+                    if (d < nearestDist) {
+                        nearestDist = d;
+                        nearestPlayer = p;
+                    }
+                });
+                if (!nearestPlayer) return;
+
+                const dx = nearestPlayer.x - this.x;
+                const dy = nearestPlayer.y - this.y;
+                const distance = nearestDist;
 
                 // Type-specific behavior
                 switch (this.enemyType) {
@@ -1737,7 +1805,20 @@
                 this.levelNum = levelNum;
             }
 
-            update(dt, platforms, player) {
+            update(dt, platforms, players) {
+                // Find nearest alive player for chase behavior
+                const playersArr = Array.isArray(players) ? players : [players];
+                let nearestPlayer = null;
+                let nearestDist = Infinity;
+                playersArr.forEach(p => {
+                    if (p.dead) return;
+                    const d = Math.abs(p.x - this.x);
+                    if (d < nearestDist) {
+                        nearestDist = d;
+                        nearestPlayer = p;
+                    }
+                });
+
                 // Movement patterns based on phase
                 if (this.phase === 1) {
                     // Phase 1: Back and forth movement
@@ -1746,9 +1827,11 @@
                         this.vx *= -1;
                     }
                 } else if (this.phase === 2) {
-                    // Phase 2: Chase player
-                    const dx = player.x - this.x;
-                    this.vx = dx > 0 ? 3 : -3;
+                    // Phase 2: Chase nearest player
+                    if (nearestPlayer) {
+                        const dx = nearestPlayer.x - this.x;
+                        this.vx = dx > 0 ? 3 : -3;
+                    }
                     this.x += this.vx * dt * 60;
 
                     // Jump occasionally
@@ -1958,7 +2041,7 @@
         }
 
         // Game state
-        let player;
+        let players = [];
         let level;
         let boss;
         let particles = [];
@@ -1968,40 +2051,135 @@
 
         const keys = {};
 
+        function spawnPlayer2() {
+            if (gameState !== 'PLAYING') return;
+
+            const p2Exists = players.length > 1;
+
+            if (!p2Exists) {
+                // First time joining: create P2
+                const spawnX = cameraX + WIDTH / 2;
+                const p2 = new Player(1, spawnX);
+                p2.y = -50;
+                p2.vy = 0;
+                players.push(p2);
+            } else {
+                // P2 already exists but is dead: revive with drop-in
+                const p2 = players[1];
+                if (!p2.dead) return;
+                p2.dead = false;
+                p2.health = 1;
+                p2.x = cameraX + WIDTH / 2;
+                p2.y = -50;
+                p2.vx = 0;
+                p2.vy = 0;
+                p2.fallingIntoGoal = false;
+                p2.reachedGoal = false;
+                p2.powerups = {
+                    speed: false,
+                    doubleJump: 0,
+                    shield: false,
+                    rapidFire: 0,
+                    zeroGravity: 0,
+                    bigBoy: 0,
+                    enemySleep: 0,
+                    invincibility: false
+                };
+            }
+
+            // Drop-in particle burst
+            const spawnX = players[1].x;
+            for (let i = 0; i < 30; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 2 + Math.random() * 5;
+                particles.push(new Particle(
+                    spawnX, 50,
+                    i % 2 === 0 ? '#8b5fcf' : '#c9a0ff',
+                    Math.cos(angle) * speed,
+                    Math.sin(angle) * speed
+                ));
+            }
+
+            playSound('powerup');
+            updatePlayerUIVisibility();
+            updateUI();
+        }
+
         document.addEventListener('keydown', (e) => {
             keys[e.key.toLowerCase()] = true;
 
             if (gameState === 'START') {
                 startGame();
-            } else if (gameState === 'PLAYING') {
-                if (e.key === ' ') {
-                    activateGlitchMode();
+                return;
+            }
+
+            if (gameState !== 'PLAYING') return;
+
+            if (e.key === ' ') {
+                activateGlitchMode();
+                e.preventDefault();
+                return;
+            }
+
+            const p2Active = players.length > 1;
+            const p1 = players[0];
+
+            // P2 spawn/revive: press 2 or Enter when P2 doesn't exist or is dead
+            if (e.key === '2' || e.key === 'Enter') {
+                if (!p2Active || players[1].dead) {
+                    spawnPlayer2();
                     e.preventDefault();
-                } else if (e.key.toLowerCase() === 'x' && !fallingIntoGoal) {
-                    const proj = player.shoot();
-                    if (proj) projectiles.push(proj);
-                } else if ((e.key === 'w' || e.key === 'ArrowUp') &&
-                          (player.onGround || player.hasDoubleJump > 0) &&
-                          !fallingIntoGoal) {
-                    player.vy = JUMP_STRENGTH;
-                    if (!player.onGround) player.hasDoubleJump--;
-                } else if (e.key === '5') {
-                    // Cheat code: jump to first mini game
-                    currentLevel = 4;
-                    nextLevel();
-                } else if (e.key === '8') {
-                    // Cheat code: jump to first boss level
-                    currentLevel = 9;
-                    nextLevel();
-                } else if (e.key === '9') {
-                    // Cheat code: jump to level 90 (9th boss)
-                    currentLevel = 89;
-                    nextLevel();
-                } else if (e.key === '0') {
-                    // Cheat code: jump to final boss level (100)
-                    currentLevel = 99;
-                    nextLevel();
+                    return;
                 }
+            }
+
+            // Player 1: W to jump, X to shoot
+            if (p1 && !p1.dead && !p1.fallingIntoGoal) {
+                if (e.key.toLowerCase() === 'x') {
+                    const proj = p1.shoot();
+                    if (proj) projectiles.push(proj);
+                } else if (e.key.toLowerCase() === 'w' &&
+                          (p1.onGround || p1.hasDoubleJump > 0)) {
+                    p1.vy = JUMP_STRENGTH;
+                    if (!p1.onGround) p1.hasDoubleJump--;
+                }
+                // In 1-player mode, ArrowUp also jumps P1
+                if (!p2Active && e.key === 'ArrowUp' &&
+                    (p1.onGround || p1.hasDoubleJump > 0)) {
+                    p1.vy = JUMP_STRENGTH;
+                    if (!p1.onGround) p1.hasDoubleJump--;
+                }
+            }
+
+            // Player 2: ArrowUp to jump, Enter to shoot
+            if (p2Active) {
+                const p2 = players[1];
+                if (p2 && !p2.dead && !p2.fallingIntoGoal) {
+                    if (e.key === 'Enter') {
+                        const proj = p2.shoot();
+                        if (proj) projectiles.push(proj);
+                        e.preventDefault();
+                    } else if (e.key === 'ArrowUp' &&
+                              (p2.onGround || p2.hasDoubleJump > 0)) {
+                        p2.vy = JUMP_STRENGTH;
+                        if (!p2.onGround) p2.hasDoubleJump--;
+                    }
+                }
+            }
+
+            // Cheat codes
+            if (e.key === '5') {
+                currentLevel = 4;
+                nextLevel();
+            } else if (e.key === '8') {
+                currentLevel = 9;
+                nextLevel();
+            } else if (e.key === '9') {
+                currentLevel = 89;
+                nextLevel();
+            } else if (e.key === '0') {
+                currentLevel = 99;
+                nextLevel();
             }
         });
 
@@ -2026,13 +2204,10 @@
             gameState = 'PLAYING';
             currentLevel = 1;
             score = 0;
-            health = 3;
             cameraX = 0;
-            fallingIntoGoal = false;
-            powerups = { speed: false, doubleJump: 0, shield: false, rapidFire: 0, zeroGravity: 0, bigBoy: 0, enemySleep: 0, invincibility: false };
 
             boss = null;
-            player = new Player();
+            players = [new Player(0, 100)];
             level = generateLevel(currentLevel);
             particles = [];
             projectiles = [];
@@ -2042,8 +2217,22 @@
 
             document.getElementById('bossWarning').classList.add('hidden');
 
+            // Show/hide P2 UI
+            updatePlayerUIVisibility();
             updateUI();
             startMusic();
+        }
+
+        function updatePlayerUIVisibility() {
+            const hasP2 = players.length > 1;
+            const p1Label = document.querySelector('.player-label.p1');
+            const p2Label = document.querySelector('.player-label.p2');
+            const p2Hearts = document.getElementById('hearts2');
+            const p2Powerups = document.getElementById('powerups2');
+            p1Label.style.display = hasP2 ? '' : 'none';
+            p2Label.style.display = hasP2 ? '' : 'none';
+            p2Hearts.style.display = hasP2 ? '' : 'none';
+            p2Powerups.style.display = hasP2 ? '' : 'none';
         }
 
         function nextLevel() {
@@ -2051,7 +2240,6 @@
 
             currentLevel++;
             if (currentLevel > 100) {
-                // Win!
                 gameState = 'GAME_OVER';
                 document.getElementById('gameOverTitle').textContent = 'YOU WIN!';
                 showGameOver();
@@ -2060,28 +2248,57 @@
 
             // Show warnings for special levels
             if (currentLevel % 10 === 0) {
-                // Boss level
                 document.getElementById('bossWarning').classList.remove('hidden');
                 document.getElementById('miniGameWarning').classList.add('hidden');
             } else if (currentLevel % 5 === 0) {
-                // Mini game level
                 document.getElementById('miniGameWarning').classList.remove('hidden');
                 document.getElementById('bossWarning').classList.add('hidden');
             } else {
-                // Regular level
                 document.getElementById('bossWarning').classList.add('hidden');
                 document.getElementById('miniGameWarning').classList.add('hidden');
             }
 
             boss = null;
-            player = new Player();
+
+            // Preserve health and doubleJump stacks across levels, revive dead players
+            players.forEach((p, i) => {
+                const savedHealth = p.dead ? 1 : p.health;
+                const savedDoubleJump = p.powerups.doubleJump;
+                const startX = i === 0 ? 100 : 150;
+
+                p.x = startX;
+                p.y = HEIGHT - 200;
+                p.vx = 0;
+                p.vy = 0;
+                p.size = PLAYER_SIZE;
+                p.onGround = false;
+                p.hasDoubleJump = savedDoubleJump;
+                p.bobPhase = 0;
+                p.facingDirection = 1;
+                p.shootCooldown = 0;
+                p.muzzleFlash = 0;
+                p.health = savedHealth;
+                p.dead = false;
+                p.reachedGoal = false;
+                p.fallingIntoGoal = false;
+                p.powerups = {
+                    speed: false,
+                    doubleJump: savedDoubleJump,
+                    shield: false,
+                    rapidFire: 0,
+                    zeroGravity: 0,
+                    bigBoy: 0,
+                    enemySleep: 0,
+                    invincibility: false
+                };
+            });
+
             level = generateLevel(currentLevel);
             particles = [];
             projectiles = [];
             bossProjectiles = [];
             enemyProjectiles = [];
             cameraX = 0;
-            fallingIntoGoal = false;
             levelStartTime = gameTime;
             gameState = 'PLAYING';
 
@@ -2104,20 +2321,17 @@
 
             playSound('glitch');
 
-            // Spawn extra enemies on platforms (not too close to player)
+            // Spawn extra enemies on platforms (not too close to any alive player)
             for (let i = 0; i < 15; i++) {
-                // Pick a random platform
                 const platform = level.platforms[Math.floor(Math.random() * level.platforms.length)];
 
-                // Generate X position on this platform, but not too close to player
                 let enemyX;
                 let attempts = 0;
                 do {
                     enemyX = platform.x + Math.random() * platform.width;
                     attempts++;
-                    // Give up after 20 attempts and just spawn it
                     if (attempts > 20) break;
-                } while (Math.abs(enemyX - player.x) < player.size * 2);
+                } while (players.some(p => !p.dead && Math.abs(enemyX - p.x) < p.size * 2));
 
                 // Place enemy on top of platform
                 const enemyY = platform.y - 25; // Enemy size/2 to place on platform
@@ -2135,34 +2349,44 @@
             screenShakeY = 30;
         }
 
-        function updatePowerupDisplay() {
+        function getPlayerPowerupString(pups) {
             const active = [];
-            if (powerups.speed) active.push('⚡Speed');
-            if (powerups.doubleJump > 0) {
-                const jumpName = powerups.doubleJump === 1 ? 'Double Jump' :
-                                 powerups.doubleJump === 2 ? 'Triple Jump' :
-                                 powerups.doubleJump === 3 ? 'Quad Jump' :
-                                 `${powerups.doubleJump + 1}x Jump`;
-                active.push('🦘' + jumpName);
+            if (pups.speed) active.push('⚡');
+            if (pups.doubleJump > 0) {
+                active.push('🦘' + (pups.doubleJump > 1 ? pups.doubleJump + 1 + 'x' : ''));
             }
-            if (powerups.shield) active.push('🛡️Shield');
-            if (powerups.rapidFire > 0) active.push('🔥Rapid Fire (' + Math.ceil(powerups.rapidFire) + 's)');
-            if (powerups.zeroGravity > 0) active.push('🎈Zero Gravity (' + Math.ceil(powerups.zeroGravity) + 's)');
-            if (powerups.bigBoy > 0) active.push('💪Big Boy (' + Math.ceil(powerups.bigBoy) + 's)');
-            if (powerups.enemySleep > 0) active.push('💤Enemy Sleep (' + Math.ceil(powerups.enemySleep) + 's)');
-            if (powerups.invincibility) active.push('✨Invincibility');
+            if (pups.shield) active.push('🛡️');
+            if (pups.rapidFire > 0) active.push('🔥' + Math.ceil(pups.rapidFire));
+            if (pups.zeroGravity > 0) active.push('🎈' + Math.ceil(pups.zeroGravity));
+            if (pups.bigBoy > 0) active.push('💪' + Math.ceil(pups.bigBoy));
+            if (pups.enemySleep > 0) active.push('💤' + Math.ceil(pups.enemySleep));
+            if (pups.invincibility) active.push('✨');
+            return active.join(' ');
+        }
 
-            document.getElementById('powerups').textContent = active.length > 0 ? 'Powers: ' + active.join(' ') : '';
+        function updatePowerupDisplay() {
+            players.forEach((p, i) => {
+                const el = document.getElementById('powerups' + (i + 1));
+                if (el) {
+                    el.textContent = getPlayerPowerupString(p.powerups);
+                }
+            });
         }
 
         function updateUI() {
             document.getElementById('level').textContent = currentLevel;
             document.getElementById('score').textContent = score;
 
-            let heartsStr = '';
-            for (let i = 0; i < health; i++) heartsStr += '❤️';
-            for (let i = health; i < 6; i++) heartsStr += '🖤';
-            document.getElementById('hearts').textContent = heartsStr;
+            players.forEach((p, i) => {
+                let heartsStr = '';
+                if (p.dead) {
+                    heartsStr = '💀';
+                } else {
+                    for (let h = 0; h < p.health; h++) heartsStr += '❤️';
+                    for (let h = p.health; h < 6; h++) heartsStr += '🖤';
+                }
+                document.getElementById('hearts' + (i + 1)).textContent = heartsStr;
+            });
 
             updatePowerupDisplay();
         }
@@ -2181,6 +2405,12 @@
             document.getElementById('gameOver').classList.remove('hidden');
         }
 
+        function checkAllDead() {
+            if (players.every(p => p.dead)) {
+                showGameOver();
+            }
+        }
+
         function updateGame(dt) {
             gameTime += dt * 1000;
 
@@ -2193,7 +2423,6 @@
                 } else {
                     glitchIntensity = (glitchEndTime - gameTime) / GLITCH_DURATION;
 
-                    // Draw scary glitch overlay
                     glitchCtx.clearRect(0, 0, WIDTH, HEIGHT);
                     glitchCtx.fillStyle = `rgba(255, 0, 0, ${glitchIntensity * 0.3})`;
                     for (let i = 0; i < 10; i++) {
@@ -2210,80 +2439,104 @@
             screenShakeX *= 0.9;
             screenShakeY *= 0.9;
 
-            // Player input (disabled when falling into goal)
-            if (!fallingIntoGoal) {
+            // Player 1 input
+            const p2Active = players.length > 1;
+            const p1 = players[0];
+            if (p1 && !p1.dead && !p1.fallingIntoGoal) {
                 let dx = 0;
-                if (keys['arrowleft'] || keys['a']) dx -= 1;
-                if (keys['arrowright'] || keys['d']) dx += 1;
-
-                // Update facing direction when moving
-                if (dx !== 0) {
-                    player.facingDirection = dx;
+                if (keys['a']) dx -= 1;
+                if (keys['d']) dx += 1;
+                // In 1-player mode, arrow keys also move P1
+                if (!p2Active) {
+                    if (keys['arrowleft']) dx -= 1;
+                    if (keys['arrowright']) dx += 1;
                 }
-
-                // Glitch scrambles controls
-                if (glitchIntensity > 0.5 && Math.random() < 0.1) {
-                    dx *= -1;
-                }
-
-                const moveSpeed = powerups.speed ? MOVE_SPEED * 1.5 : MOVE_SPEED;
-                player.vx += dx * moveSpeed * dt * 60;
+                if (dx !== 0) p1.facingDirection = dx;
+                if (glitchIntensity > 0.5 && Math.random() < 0.1) dx *= -1;
+                const moveSpeed1 = p1.powerups.speed ? MOVE_SPEED * 1.5 : MOVE_SPEED;
+                p1.vx += dx * moveSpeed1 * dt * 60;
             }
 
-            // Update player (continues even when falling into goal so they fall through)
-            player.update(dt, level.platforms);
+            // Player 2 input
+            if (p2Active) {
+                const p2 = players[1];
+                if (p2 && !p2.dead && !p2.fallingIntoGoal) {
+                    let dx = 0;
+                    if (keys['arrowleft']) dx -= 1;
+                    if (keys['arrowright']) dx += 1;
+                    if (dx !== 0) p2.facingDirection = dx;
+                    if (glitchIntensity > 0.5 && Math.random() < 0.1) dx *= -1;
+                    const moveSpeed2 = p2.powerups.speed ? MOVE_SPEED * 1.5 : MOVE_SPEED;
+                    p2.vx += dx * moveSpeed2 * dt * 60;
+                }
+            }
 
-            // Update timed powerups
+            // Update all players
+            players.forEach(p => p.update(dt, level.platforms));
+
+            // Update timed powerups per player
             let timedPowerupsChanged = false;
-            if (powerups.rapidFire > 0) {
-                powerups.rapidFire -= dt;
-                if (powerups.rapidFire <= 0) {
-                    powerups.rapidFire = 0;
+            let anyEnemySleepActive = false;
+            players.forEach(p => {
+                if (p.dead) return;
+                const pups = p.powerups;
+                if (pups.rapidFire > 0) {
+                    pups.rapidFire -= dt;
+                    if (pups.rapidFire <= 0) pups.rapidFire = 0;
+                    timedPowerupsChanged = true;
                 }
-                timedPowerupsChanged = true;
-            }
-            if (powerups.zeroGravity > 0) {
-                powerups.zeroGravity -= dt;
-                if (powerups.zeroGravity <= 0) {
-                    powerups.zeroGravity = 0;
+                if (pups.zeroGravity > 0) {
+                    pups.zeroGravity -= dt;
+                    if (pups.zeroGravity <= 0) pups.zeroGravity = 0;
+                    timedPowerupsChanged = true;
                 }
-                timedPowerupsChanged = true;
-            }
-            if (powerups.bigBoy > 0) {
-                powerups.bigBoy -= dt;
-                if (powerups.bigBoy <= 0) {
-                    powerups.bigBoy = 0;
+                if (pups.bigBoy > 0) {
+                    pups.bigBoy -= dt;
+                    if (pups.bigBoy <= 0) pups.bigBoy = 0;
+                    timedPowerupsChanged = true;
                 }
-                timedPowerupsChanged = true;
-            }
-            if (powerups.enemySleep > 0) {
-                powerups.enemySleep -= dt;
-                if (powerups.enemySleep <= 0) {
-                    powerups.enemySleep = 0;
-                    // Wake up all enemies
-                    level.enemies.forEach(e => e.sleeping = false);
+                if (pups.enemySleep > 0) {
+                    pups.enemySleep -= dt;
+                    if (pups.enemySleep <= 0) pups.enemySleep = 0;
+                    timedPowerupsChanged = true;
                 }
-                timedPowerupsChanged = true;
+                if (pups.enemySleep > 0) anyEnemySleepActive = true;
+            });
+
+            // Wake enemies if no player has enemySleep active
+            if (!anyEnemySleepActive) {
+                level.enemies.forEach(e => { if (e.sleeping) e.sleeping = false; });
             }
 
-            // Update powerup display if any timed powerup changed
             if (timedPowerupsChanged) {
                 updatePowerupDisplay();
             }
 
-            // Auto-shoot with rapid fire (disabled when falling into goal)
-            if (powerups.rapidFire > 0 && !fallingIntoGoal) {
-                const proj = player.shoot();
-                if (proj) projectiles.push(proj);
-            }
+            // Auto-shoot with rapid fire per player
+            players.forEach(p => {
+                if (!p.dead && !p.fallingIntoGoal && p.powerups.rapidFire > 0) {
+                    const proj = p.shoot();
+                    if (proj) projectiles.push(proj);
+                }
+            });
 
-            // Camera follows player
-            cameraX = Math.max(0, Math.min(player.x - WIDTH / 3, level.width - WIDTH));
+            // Camera follows midpoint of alive players
+            const alivePlayers = players.filter(p => !p.dead);
+            let cameraTarget;
+            if (alivePlayers.length > 1) {
+                const sumX = alivePlayers.reduce((s, p) => s + p.x, 0);
+                cameraTarget = sumX / alivePlayers.length;
+            } else if (alivePlayers.length === 1) {
+                cameraTarget = alivePlayers[0].x;
+            } else {
+                cameraTarget = cameraX + WIDTH / 2;
+            }
+            cameraX = Math.max(0, Math.min(cameraTarget - WIDTH / 3, level.width - WIDTH));
 
             // Update enemies
-            level.enemies.forEach(e => e.update(dt, level.platforms, player));
+            level.enemies.forEach(e => e.update(dt, level.platforms, players));
 
-            // Enemy shooting (shooter type enemies)
+            // Enemy shooting
             level.enemies.forEach(e => {
                 const enemyProj = e.shoot();
                 if (enemyProj) {
@@ -2292,18 +2545,16 @@
                 }
             });
 
-            // Update boss (if boss level)
+            // Update boss
             if (boss) {
-                boss.update(dt, level.platforms, player);
+                boss.update(dt, level.platforms, players);
 
-                // Boss shooting
                 const bossProj = boss.shoot();
                 if (bossProj) {
                     bossProjectiles.push(bossProj);
                     playSound('shoot');
                 }
 
-                // Boss spawning minions
                 const minion = boss.spawnMinion();
                 if (minion) {
                     level.enemies.push(minion);
@@ -2317,8 +2568,6 @@
                 if (p.vy !== undefined) {
                     p.y += p.vy * dt * 60;
                 }
-
-                // Add particle trail
                 if (Math.random() < 0.5) {
                     particles.push(new Particle(p.x, p.y, '#ff0', p.vx * -0.1, (Math.random() - 0.5) * 2));
                 }
@@ -2328,8 +2577,6 @@
             // Update boss projectiles
             bossProjectiles.forEach(p => {
                 p.x += p.vx * dt * 60;
-
-                // Add red particle trail for boss projectiles
                 if (Math.random() < 0.5) {
                     particles.push(new Particle(p.x, p.y, '#f00', p.vx * -0.1, (Math.random() - 0.5) * 2));
                 }
@@ -2342,8 +2589,6 @@
                 if (p.vy !== undefined) {
                     p.y += p.vy * dt * 60;
                 }
-
-                // Add cyan particle trail for enemy projectiles
                 if (Math.random() < 0.5) {
                     particles.push(new Particle(p.x, p.y, '#0ff', p.vx * -0.1, (Math.random() - 0.5) * 2));
                 }
@@ -2355,7 +2600,7 @@
                 level.enemies.forEach(e => {
                     if (e.checkCollision(p)) {
                         e.health--;
-                        p.x = -1000; // Mark for removal
+                        p.x = -1000;
 
                         for (let i = 0; i < 10; i++) {
                             particles.push(new Particle(e.x, e.y, '#f33'));
@@ -2364,11 +2609,12 @@
                         if (e.health <= 0) {
                             score += 50;
                             playSound('collect');
-                            e.x = -10000; // Mark for removal
+                            const dropX = e.x;
+                            const dropY = e.y;
+                            e.x = -10000;
 
-                            // 25% chance to drop health pickup
                             if (Math.random() < 0.25) {
-                                level.healthPickups.push({ x: e.x, y: e.y });
+                                level.healthPickups.push({ x: dropX, y: dropY });
                             }
                         }
                     }
@@ -2376,23 +2622,20 @@
 
                 // Projectile-boss collision
                 if (boss && boss.checkCollision(p)) {
-                    p.x = -1000; // Mark for removal
+                    p.x = -1000;
 
                     for (let i = 0; i < 20; i++) {
                         particles.push(new Particle(boss.x, boss.y, '#ff0'));
                     }
 
                     if (boss.takeDamage(1)) {
-                        // Boss defeated!
                         score += 1000;
                         playSound('powerup');
 
-                        // Victory explosion
                         for (let i = 0; i < 100; i++) {
                             particles.push(new Particle(boss.x, boss.y, i % 2 === 0 ? '#ff0' : '#0ff'));
                         }
 
-                        // Complete the level
                         const timeElapsed = (gameTime - levelStartTime) / 1000;
                         const timeBonus = Math.max(0, Math.floor((120 - timeElapsed) * 10));
                         score += timeBonus;
@@ -2410,242 +2653,264 @@
 
             level.enemies = level.enemies.filter(e => e.x > -1000);
 
-            // Player-enemy collision
+            // Player-enemy collision (check all players)
             level.enemies.forEach(e => {
-                if (e.checkCollision(player)) {
-                    if (player.takeDamage()) {
-                        // Shield did NOT absorb - player took damage
-                        health--;
-                        updateUI();
-                        playSound('hit');
-                        screenShakeX = 20;
-                        screenShakeY = 20;
+                players.forEach(p => {
+                    if (p.dead || p.fallingIntoGoal) return;
+                    if (e.x < -1000) return;
+                    if (e.checkCollision(p)) {
+                        if (p.takeDamage()) {
+                            p.health--;
+                            updateUI();
+                            playSound('hit');
+                            screenShakeX = 20;
+                            screenShakeY = 20;
 
-                        if (health <= 0) {
-                            showGameOver();
+                            if (p.health <= 0) {
+                                p.dead = true;
+                                updateUI();
+                                checkAllDead();
+                            }
+                        } else {
+                            playSound('powerup');
+                            screenShakeX = 10;
+                            screenShakeY = 10;
+
+                            const contactAngle = Math.atan2(e.y - p.y, e.x - p.x);
+                            const contactX = p.x + Math.cos(contactAngle) * p.size * 0.8;
+                            const contactY = p.y + Math.sin(contactAngle) * p.size * 0.8;
+
+                            for (let i = 0; i < 30; i++) {
+                                const angle = contactAngle + (Math.random() - 0.5) * Math.PI;
+                                const speed = 3 + Math.random() * 8;
+                                const vx = Math.cos(angle) * speed;
+                                const vy = Math.sin(angle) * speed - Math.random() * 2;
+                                const colors = ['#00ffff', '#0088ff', '#ffff00', '#ffffff', '#88ffff'];
+                                const color = colors[Math.floor(Math.random() * colors.length)];
+                                particles.push(new Particle(contactX, contactY, color, vx, vy));
+                            }
+
+                            for (let i = 0; i < 10; i++) {
+                                const angle = Math.random() * Math.PI * 2;
+                                const dist = Math.random() * p.size;
+                                const px = p.x + Math.cos(angle) * dist;
+                                const py = p.y + Math.sin(angle) * dist;
+                                particles.push(new Particle(px, py, '#00ffff',
+                                    (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4));
+                            }
                         }
-                    } else {
-                        // Shield absorbed the hit - create epic spark effect!
-                        playSound('powerup');
-                        screenShakeX = 10;
-                        screenShakeY = 10;
-
-                        // Explosion of sparks from contact point
-                        const contactAngle = Math.atan2(e.y - player.y, e.x - player.x);
-                        const contactX = player.x + Math.cos(contactAngle) * player.size * 0.8;
-                        const contactY = player.y + Math.sin(contactAngle) * player.size * 0.8;
-
-                        // Create radial burst of particles
-                        for (let i = 0; i < 30; i++) {
-                            const angle = contactAngle + (Math.random() - 0.5) * Math.PI;
-                            const speed = 3 + Math.random() * 8;
-                            const vx = Math.cos(angle) * speed;
-                            const vy = Math.sin(angle) * speed - Math.random() * 2;
-                            const colors = ['#00ffff', '#0088ff', '#ffff00', '#ffffff', '#88ffff'];
-                            const color = colors[Math.floor(Math.random() * colors.length)];
-                            particles.push(new Particle(contactX, contactY, color, vx, vy));
-                        }
-
-                        // Add some electric arc particles
-                        for (let i = 0; i < 10; i++) {
-                            const angle = Math.random() * Math.PI * 2;
-                            const dist = Math.random() * player.size;
-                            const px = player.x + Math.cos(angle) * dist;
-                            const py = player.y + Math.sin(angle) * dist;
-                            particles.push(new Particle(px, py, '#00ffff',
-                                (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4));
-                        }
+                        e.x = -10000;
                     }
-                    e.x = -10000;
-                }
+                });
             });
 
-            // Player-boss collision
-            if (boss && boss.checkCollision(player)) {
-                if (player.takeDamage()) {
-                    health--;
-                    updateUI();
-                    playSound('hit');
-                    screenShakeX = 30;
-                    screenShakeY = 30;
+            // Player-boss collision (check all players)
+            if (boss) {
+                players.forEach(p => {
+                    if (p.dead || p.fallingIntoGoal) return;
+                    if (boss && boss.checkCollision(p)) {
+                        if (p.takeDamage()) {
+                            p.health--;
+                            updateUI();
+                            playSound('hit');
+                            screenShakeX = 30;
+                            screenShakeY = 30;
 
-                    if (health <= 0) {
-                        showGameOver();
-                    }
-                } else {
-                    playSound('powerup');
-                    screenShakeX = 15;
-                    screenShakeY = 15;
+                            if (p.health <= 0) {
+                                p.dead = true;
+                                updateUI();
+                                checkAllDead();
+                            }
+                        } else {
+                            playSound('powerup');
+                            screenShakeX = 15;
+                            screenShakeY = 15;
 
-                    for (let i = 0; i < 40; i++) {
-                        const colors = ['#00ffff', '#0088ff', '#ffff00', '#ffffff'];
-                        const color = colors[Math.floor(Math.random() * colors.length)];
-                        particles.push(new Particle(player.x, player.y, color));
+                            for (let i = 0; i < 40; i++) {
+                                const colors = ['#00ffff', '#0088ff', '#ffff00', '#ffffff'];
+                                const color = colors[Math.floor(Math.random() * colors.length)];
+                                particles.push(new Particle(p.x, p.y, color));
+                            }
+                        }
                     }
-                }
+                });
             }
 
-            // Boss projectile collision with player
-            bossProjectiles.forEach(p => {
-                if (Math.abs(p.x - player.x) < 30 && Math.abs(p.y - player.y) < 30) {
-                    p.x = -1000; // Mark for removal
+            // Boss projectile collision with players
+            bossProjectiles.forEach(proj => {
+                if (proj.x < -500) return;
+                players.forEach(p => {
+                    if (p.dead || p.fallingIntoGoal) return;
+                    if (Math.abs(proj.x - p.x) < 30 && Math.abs(proj.y - p.y) < 30) {
+                        proj.x = -1000;
 
-                    if (player.takeDamage()) {
-                        health--;
-                        updateUI();
-                        playSound('hit');
-                        screenShakeX = 25;
-                        screenShakeY = 25;
+                        if (p.takeDamage()) {
+                            p.health--;
+                            updateUI();
+                            playSound('hit');
+                            screenShakeX = 25;
+                            screenShakeY = 25;
 
-                        if (health <= 0) {
-                            showGameOver();
-                        }
-                    } else {
-                        playSound('powerup');
-                        for (let i = 0; i < 20; i++) {
-                            particles.push(new Particle(p.x, p.y, '#0ff'));
-                        }
-                    }
-                }
-            });
-
-            // Enemy projectile collision with player
-            enemyProjectiles.forEach(p => {
-                if (Math.abs(p.x - player.x) < 30 && Math.abs(p.y - player.y) < 30) {
-                    p.x = -1000; // Mark for removal
-
-                    if (player.takeDamage()) {
-                        health--;
-                        updateUI();
-                        playSound('hit');
-                        screenShakeX = 20;
-                        screenShakeY = 20;
-
-                        if (health <= 0) {
-                            showGameOver();
-                        }
-                    } else {
-                        playSound('powerup');
-                        for (let i = 0; i < 15; i++) {
-                            particles.push(new Particle(p.x, p.y, '#0ff'));
+                            if (p.health <= 0) {
+                                p.dead = true;
+                                updateUI();
+                                checkAllDead();
+                            }
+                        } else {
+                            playSound('powerup');
+                            for (let i = 0; i < 20; i++) {
+                                particles.push(new Particle(proj.x, proj.y, '#0ff'));
+                            }
                         }
                     }
-                }
+                });
             });
 
-            // Collectibles
+            // Enemy projectile collision with players
+            enemyProjectiles.forEach(proj => {
+                if (proj.x < -500) return;
+                players.forEach(p => {
+                    if (p.dead || p.fallingIntoGoal) return;
+                    if (Math.abs(proj.x - p.x) < 30 && Math.abs(proj.y - p.y) < 30) {
+                        proj.x = -1000;
+
+                        if (p.takeDamage()) {
+                            p.health--;
+                            updateUI();
+                            playSound('hit');
+                            screenShakeX = 20;
+                            screenShakeY = 20;
+
+                            if (p.health <= 0) {
+                                p.dead = true;
+                                updateUI();
+                                checkAllDead();
+                            }
+                        } else {
+                            playSound('powerup');
+                            for (let i = 0; i < 15; i++) {
+                                particles.push(new Particle(proj.x, proj.y, '#0ff'));
+                            }
+                        }
+                    }
+                });
+            });
+
+            // Collectibles - any alive player can collect
             level.collectibles = level.collectibles.filter(c => {
-                if (Math.abs(c.x - player.x) < 30 && Math.abs(c.y - player.y) < 30) {
-                    score += 10;
-                    updateUI();
-                    playSound('collect');
-
-                    for (let i = 0; i < 10; i++) {
-                        particles.push(new Particle(c.x, c.y, '#ffd700'));
-                    }
-
-                    return false;
-                }
-                return true;
-            });
-
-            // Power-ups
-            level.powerupItems = level.powerupItems.filter(p => {
-                if (Math.abs(p.x - player.x) < 40 && Math.abs(p.y - player.y) < 40) {
-                    // Handle mega powerup (activates all powerups)
-                    if (p.type === 'mega') {
-                        powerups.speed = true;
-                        powerups.doubleJump = powerups.doubleJump + 1; // Stacks infinitely
-                        powerups.shield = true;
-                        powerups.rapidFire = 20;
-                        powerups.zeroGravity = 15;
-                        powerups.bigBoy = 15;
-                        powerups.enemySleep = 20;
-                        powerups.invincibility = true;
-
-                        // Put all enemies to sleep
-                        level.enemies.forEach(e => e.sleeping = true);
-                    }
-                    // Handle doubleJump specially (stacks up)
-                    else if (p.type === 'doubleJump') {
-                        powerups.doubleJump = powerups.doubleJump + 1; // Stacks infinitely
-                    }
-                    // Handle timed powerups
-                    else if (p.type === 'rapidFire') {
-                        powerups.rapidFire = 20; // 20 seconds
-                    } else if (p.type === 'zeroGravity') {
-                        powerups.zeroGravity = 15; // 15 seconds
-                    } else if (p.type === 'bigBoy') {
-                        powerups.bigBoy = 15; // 15 seconds
-                    } else if (p.type === 'enemySleep') {
-                        powerups.enemySleep = 20; // 20 seconds
-                        // Put all enemies to sleep
-                        level.enemies.forEach(e => e.sleeping = true);
-                    } else if (p.type === 'invincibility') {
-                        powerups.invincibility = true; // Lasts entire level
-                    }
-                    // Handle toggle powerups
-                    else {
-                        powerups[p.type] = true;
-                    }
-
-                    updateUI();
-                    playSound('powerup');
-
-                    for (let i = 0; i < 20; i++) {
-                        particles.push(new Particle(p.x, p.y, '#0ff'));
-                    }
-
-                    return false;
-                }
-                return true;
-            });
-
-            // Health pickups
-            level.healthPickups = level.healthPickups.filter(h => {
-                if (Math.abs(h.x - player.x) < 35 && Math.abs(h.y - player.y) < 35) {
-                    if (health < 6) {
-                        health++;
+                for (const p of players) {
+                    if (p.dead) continue;
+                    if (Math.abs(c.x - p.x) < 30 && Math.abs(c.y - p.y) < 30) {
+                        score += 10;
                         updateUI();
-                        playSound('powerup');
+                        playSound('collect');
 
-                        for (let i = 0; i < 20; i++) {
-                            particles.push(new Particle(h.x, h.y, '#f0f'));
+                        for (let i = 0; i < 10; i++) {
+                            particles.push(new Particle(c.x, c.y, '#ffd700'));
                         }
-
                         return false;
                     }
                 }
                 return true;
             });
 
-            // Goal (only for non-boss levels)
-            if (level.goal && !fallingIntoGoal) {
-                // Check if player is jumping into the can from above
+            // Power-ups - apply to the collecting player
+            level.powerupItems = level.powerupItems.filter(pu => {
+                for (const p of players) {
+                    if (p.dead) continue;
+                    if (Math.abs(pu.x - p.x) < 40 && Math.abs(pu.y - p.y) < 40) {
+                        const pups = p.powerups;
+                        if (pu.type === 'mega') {
+                            pups.speed = true;
+                            pups.doubleJump = pups.doubleJump + 1;
+                            pups.shield = true;
+                            pups.rapidFire = 20;
+                            pups.zeroGravity = 15;
+                            pups.bigBoy = 15;
+                            pups.enemySleep = 20;
+                            pups.invincibility = true;
+                            level.enemies.forEach(e => e.sleeping = true);
+                        } else if (pu.type === 'doubleJump') {
+                            pups.doubleJump = pups.doubleJump + 1;
+                        } else if (pu.type === 'rapidFire') {
+                            pups.rapidFire = 20;
+                        } else if (pu.type === 'zeroGravity') {
+                            pups.zeroGravity = 15;
+                        } else if (pu.type === 'bigBoy') {
+                            pups.bigBoy = 15;
+                        } else if (pu.type === 'enemySleep') {
+                            pups.enemySleep = 20;
+                            level.enemies.forEach(e => e.sleeping = true);
+                        } else if (pu.type === 'invincibility') {
+                            pups.invincibility = true;
+                        } else {
+                            pups[pu.type] = true;
+                        }
+
+                        updateUI();
+                        playSound('powerup');
+
+                        for (let i = 0; i < 20; i++) {
+                            particles.push(new Particle(pu.x, pu.y, '#0ff'));
+                        }
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            // Health pickups - heal the collecting player
+            level.healthPickups = level.healthPickups.filter(h => {
+                for (const p of players) {
+                    if (p.dead) continue;
+                    if (Math.abs(h.x - p.x) < 35 && Math.abs(h.y - p.y) < 35) {
+                        if (p.health < 6) {
+                            p.health++;
+                            updateUI();
+                            playSound('powerup');
+
+                            for (let i = 0; i < 20; i++) {
+                                particles.push(new Particle(h.x, h.y, '#f0f'));
+                            }
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            });
+
+            // Goal detection per player (only for non-boss levels)
+            if (level.goal) {
                 const canLeft = level.goal.x;
                 const canRight = level.goal.x + level.goal.width;
                 const canTop = level.goal.y;
-                const canOpeningTop = canTop + 10; // Small margin at very top of can
+                const canOpeningTop = canTop + 10;
 
-                // Player must be:
-                // 1. Above the can opening
-                // 2. Falling downward
-                // 3. Within the can's horizontal bounds
-                if (player.y < canOpeningTop &&
-                    player.vy > 0 &&
-                    player.x > canLeft - 10 &&
-                    player.x < canRight + 10) {
-                    // Player is falling into the can!
-                    fallingIntoGoal = true;
-                    playSound('collect');
-                }
-            }
+                players.forEach(p => {
+                    if (p.dead || p.reachedGoal || p.fallingIntoGoal) return;
 
-            // Check if player has fallen deep enough into can to complete level
-            if (fallingIntoGoal && level.goal) {
+                    if (p.y < canOpeningTop &&
+                        p.vy > 0 &&
+                        p.x > canLeft - 10 &&
+                        p.x < canRight + 10) {
+                        p.fallingIntoGoal = true;
+                        playSound('collect');
+                    }
+                });
+
+                // Check if player has fallen deep enough into can
                 const canBottom = level.goal.y + level.goal.height;
-                if (player.y > canBottom - 20) {
-                    // Player has fallen all the way in - complete the level
+                players.forEach(p => {
+                    if (p.fallingIntoGoal && !p.reachedGoal) {
+                        if (p.y > canBottom - 20) {
+                            p.reachedGoal = true;
+                        }
+                    }
+                });
+
+                // Level completes when all alive players have reached goal
+                const alivePlayersForGoal = players.filter(p => !p.dead);
+                if (alivePlayersForGoal.length > 0 && alivePlayersForGoal.every(p => p.reachedGoal)) {
                     const timeElapsed = (gameTime - levelStartTime) / 1000;
                     const timeBonus = Math.max(0, Math.floor((120 - timeElapsed) * 10));
                     score += timeBonus;
@@ -2655,7 +2920,6 @@
                     document.getElementById('levelComplete').classList.remove('hidden');
 
                     gameState = 'LEVEL_COMPLETE';
-                    fallingIntoGoal = false;
                     stopMusic();
                 }
             }
@@ -2664,11 +2928,16 @@
             particles.forEach(p => p.update(dt));
             particles = particles.filter(p => !p.isDead());
 
-            // Death by falling
-            if (player.y > HEIGHT + 100) {
-                health = 0;
-                showGameOver();
-            }
+            // Death by falling per player
+            players.forEach(p => {
+                if (p.dead) return;
+                if (p.y > HEIGHT + 100) {
+                    p.health = 0;
+                    p.dead = true;
+                    updateUI();
+                    checkAllDead();
+                }
+            });
         }
 
         function renderGame() {
@@ -2963,25 +3232,26 @@
                 ctx.fill();
             });
 
-            // Draw player (with clipping when falling into goal)
-            if (fallingIntoGoal && level.goal) {
-                ctx.save();
-                // Clip to the can bounds so player disappears into it from the top
-                const goalX = level.goal.x - cameraX;
-                const canWidth = level.goal.width;
-                const canHeight = level.goal.height;
-                const bobAmount = Math.sin(gameTime / 400) * 5;
-                const canY = level.goal.y + bobAmount + 10; // +10 to start clipping at rim
+            // Draw all players
+            players.forEach(p => {
+                if (p.fallingIntoGoal && level.goal && !p.reachedGoal) {
+                    ctx.save();
+                    const goalX = level.goal.x - cameraX;
+                    const canWidth = level.goal.width;
+                    const canHeight = level.goal.height;
+                    const bobAmount = Math.sin(gameTime / 400) * 5;
+                    const canY = level.goal.y + bobAmount + 10;
 
-                ctx.beginPath();
-                ctx.rect(goalX, canY, canWidth, canHeight);
-                ctx.clip();
+                    ctx.beginPath();
+                    ctx.rect(goalX, canY, canWidth, canHeight);
+                    ctx.clip();
 
-                player.draw(ctx, cameraX, level.platforms);
-                ctx.restore();
-            } else {
-                player.draw(ctx, cameraX, level.platforms);
-            }
+                    p.draw(ctx, cameraX, level.platforms);
+                    ctx.restore();
+                } else if (!p.reachedGoal) {
+                    p.draw(ctx, cameraX, level.platforms);
+                }
+            });
 
             // Draw particles
             particles.forEach(p => p.draw(ctx, cameraX));
@@ -3010,6 +3280,13 @@
         // Initialize
         initShaders();
         document.getElementById('highScore').textContent = highScore;
+
+        // Hide player labels and P2 UI by default (single-player mode)
+        document.querySelector('.player-label.p1').style.display = 'none';
+        document.querySelector('.player-label.p2').style.display = 'none';
+        document.getElementById('hearts2').style.display = 'none';
+        document.getElementById('powerups2').style.display = 'none';
+
         gameLoop();
     </script>
 </body>
