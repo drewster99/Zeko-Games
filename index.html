@@ -163,6 +163,109 @@
             pointer-events: none;
             mix-blend-mode: difference;
         }
+
+        /* Level Editor */
+        #editorScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        #editorBar {
+            pointer-events: auto;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 10px;
+            background: rgba(0, 0, 0, 0.82);
+            border-bottom: 2px solid #0f0;
+        }
+
+        .ed-tool, .ed-action {
+            font-family: 'Courier New', monospace;
+            font-size: 15px;
+            padding: 6px 10px;
+            border: 2px solid #0a0;
+            background: #011a01;
+            color: #7CFC00;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .ed-tool:hover, .ed-action:hover {
+            background: #033203;
+            border-color: #0f0;
+        }
+
+        .ed-tool.active {
+            background: #0f0;
+            color: #000;
+            border-color: #0ff;
+            box-shadow: 0 0 12px rgba(0, 255, 0, 0.7);
+        }
+
+        .ed-action {
+            border-color: #0aa;
+            color: #0ff;
+        }
+
+        #editorBar select {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            padding: 5px;
+            background: #011a01;
+            color: #7CFC00;
+            border: 2px solid #0a0;
+            border-radius: 4px;
+        }
+
+        .ed-sep {
+            width: 2px;
+            height: 26px;
+            background: rgba(0, 255, 0, 0.35);
+            margin: 0 4px;
+        }
+
+        #edHint {
+            pointer-events: none;
+            position: absolute;
+            bottom: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #0f0;
+            font-size: 15px;
+            text-align: center;
+            text-shadow: 0 0 8px rgba(0, 0, 0, 0.9);
+            background: rgba(0, 0, 0, 0.55);
+            padding: 6px 14px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        #customComplete {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 4;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.9);
+            color: #0f0;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -194,8 +297,10 @@
             <p style="margin-top: 10px; font-size: 16px;">Collect power-ups: ⚡Speed 🦘Double Jump 🛡️Shield 🔥Rapid Fire</p>
             <p class="warning">⚠️ DON'T PRESS SPACEBAR ⚠️</p>
             <p style="margin-top: 20px; font-size: 14px; color: #8b5fcf; opacity: 0.8;">Press 2 or Enter during gameplay for Player 2 drop-in!</p>
+            <p style="font-size: 14px; color: #8b5fcf; opacity: 0.8;">Player 2: Arrow Keys - Move &amp; Jump · P - Shoot</p>
             <p style="margin-top: 15px; font-size: 16px; opacity: 0.7;">High Score: <span id="highScore">0</span></p>
             <button class="button" onclick="startGame()">START GAME</button>
+            <button class="button" onclick="openEditor()">MAKE YOUR OWN LEVEL</button>
             <p style="margin-top: 20px; font-size: 14px; opacity: 0.6;">Written by Zeko Benson<br>Copyright © 2026</p>
             <p style="margin-top: 15px; font-size: 12px; opacity: 0.5;">Special Thanks:<br>Marc Benson, Simeon Statam, and Andrew Benson</p>
         </div>
@@ -212,6 +317,50 @@
             <p>Final Score: <span id="finalScore">0</span></p>
             <p>High Score: <span id="gameOverHighScore">0</span></p>
             <button class="button" onclick="restartGame()">TRY AGAIN</button>
+        </div>
+
+        <div id="customComplete" class="hidden">
+            <h2>🎉 YOU BEAT YOUR LEVEL! 🎉</h2>
+            <p>Nice building!</p>
+            <button class="button" onclick="playCustomLevel()">PLAY AGAIN</button>
+            <button class="button" onclick="returnToEditor()">BACK TO EDITOR</button>
+        </div>
+
+        <div id="editorScreen" class="hidden">
+            <div id="editorBar">
+                <button class="ed-tool" data-tool="platform">🟫 Platform</button>
+                <button class="ed-tool" data-tool="enemy">👾 Enemy</button>
+                <select id="enemyTypeSelect" title="Enemy type">
+                    <option value="normal">Normal</option>
+                    <option value="fast">Fast</option>
+                    <option value="tank">Tank</option>
+                    <option value="flyer">Flyer</option>
+                    <option value="jumper">Jumper</option>
+                    <option value="shooter">Shooter</option>
+                </select>
+                <button class="ed-tool" data-tool="coin">🪙 Coin</button>
+                <button class="ed-tool" data-tool="powerup">⚡ Power-up</button>
+                <select id="powerupTypeSelect" title="Power-up type">
+                    <option value="speed">⚡ Speed</option>
+                    <option value="doubleJump">🦘 Double Jump</option>
+                    <option value="shield">🛡️ Shield</option>
+                    <option value="rapidFire">🔥 Rapid Fire</option>
+                    <option value="zeroGravity">🎈 Zero Gravity</option>
+                    <option value="bigBoy">💪 Big Boy</option>
+                    <option value="enemySleep">💤 Enemy Sleep</option>
+                    <option value="invincibility">✨ Invincibility</option>
+                </select>
+                <button class="ed-tool" data-tool="health">❤️ Health</button>
+                <button class="ed-tool" data-tool="start">🟢 Start</button>
+                <button class="ed-tool" data-tool="goal">🥫 Goal</button>
+                <button class="ed-tool" data-tool="erase">🧽 Erase</button>
+                <span class="ed-sep"></span>
+                <button class="ed-action" onclick="playCustomLevel()">▶ Play</button>
+                <button class="ed-action" onclick="saveCustomLevel()">💾 Save</button>
+                <button class="ed-action" onclick="clearCustomLevel()">🗑 Clear</button>
+                <button class="ed-action" onclick="backToStartFromEditor()">⬅ Back</button>
+            </div>
+            <div id="edHint">Pick a tool, then click the level to place • Drag to draw platforms • ← → keys or scroll wheel to move</div>
         </div>
     </div>
 
@@ -303,6 +452,7 @@
         let screenShakeY = 0;
         let highScore = parseInt(localStorage.getItem('greenbeanHighScore')) || 0;
         let cameraX = 0;
+        let playingCustom = false;
 
         // Canvas Setup
         const bgCanvas = document.getElementById('bgCanvas');
@@ -2113,7 +2263,17 @@
                 return;
             }
 
+            if (gameState === 'EDITOR') {
+                handleEditorKey(e);
+                return;
+            }
+
             if (gameState !== 'PLAYING') return;
+
+            if (playingCustom && e.key === 'Escape') {
+                returnToEditor();
+                return;
+            }
 
             if (e.key === ' ') {
                 activateGlitchMode();
@@ -2151,11 +2311,11 @@
                 }
             }
 
-            // Player 2: ArrowUp to jump, Enter to shoot
+            // Player 2: ArrowUp to jump, Enter or P to shoot
             if (p2Active) {
                 const p2 = players[1];
                 if (p2 && !p2.dead && !p2.fallingIntoGoal) {
-                    if (e.key === 'Enter') {
+                    if (e.key === 'Enter' || e.key.toLowerCase() === 'p') {
                         const proj = p2.shoot();
                         if (proj) projectiles.push(proj);
                         e.preventDefault();
@@ -2167,7 +2327,8 @@
                 }
             }
 
-            // Cheat codes
+            // Cheat codes (disabled while playing a custom level)
+            if (playingCustom) return;
             if (e.key === '5') {
                 currentLevel = 4;
                 nextLevel();
@@ -2202,9 +2363,12 @@
             document.getElementById('highScore').textContent = highScore;
 
             gameState = 'PLAYING';
+            playingCustom = false;
             currentLevel = 1;
             score = 0;
             cameraX = 0;
+
+            document.getElementById('ui').style.display = '';
 
             boss = null;
             players = [new Player(0, 100)];
@@ -2307,7 +2471,11 @@
 
         function restartGame() {
             document.getElementById('gameOver').classList.add('hidden');
-            startGame();
+            if (playingCustom) {
+                playCustomLevel();
+            } else {
+                startGame();
+            }
         }
 
         function activateGlitchMode() {
@@ -2395,7 +2563,7 @@
             gameState = 'GAME_OVER';
             stopMusic();
 
-            if (score > highScore) {
+            if (!playingCustom && score > highScore) {
                 highScore = score;
                 localStorage.setItem('greenbeanHighScore', highScore);
             }
@@ -2911,16 +3079,22 @@
                 // Level completes when all alive players have reached goal
                 const alivePlayersForGoal = players.filter(p => !p.dead);
                 if (alivePlayersForGoal.length > 0 && alivePlayersForGoal.every(p => p.reachedGoal)) {
-                    const timeElapsed = (gameTime - levelStartTime) / 1000;
-                    const timeBonus = Math.max(0, Math.floor((120 - timeElapsed) * 10));
-                    score += timeBonus;
+                    if (playingCustom) {
+                        gameState = 'LEVEL_COMPLETE';
+                        stopMusic();
+                        document.getElementById('customComplete').classList.remove('hidden');
+                    } else {
+                        const timeElapsed = (gameTime - levelStartTime) / 1000;
+                        const timeBonus = Math.max(0, Math.floor((120 - timeElapsed) * 10));
+                        score += timeBonus;
 
-                    document.getElementById('levelScore').textContent = score;
-                    document.getElementById('timeBonus').textContent = timeBonus;
-                    document.getElementById('levelComplete').classList.remove('hidden');
+                        document.getElementById('levelScore').textContent = score;
+                        document.getElementById('timeBonus').textContent = timeBonus;
+                        document.getElementById('levelComplete').classList.remove('hidden');
 
-                    gameState = 'LEVEL_COMPLETE';
-                    stopMusic();
+                        gameState = 'LEVEL_COMPLETE';
+                        stopMusic();
+                    }
                 }
             }
 
@@ -3260,6 +3434,427 @@
         }
 
         // Game Loop
+        // ===================== LEVEL EDITOR =====================
+        const EDITOR_LEVEL_WIDTH = 4800;
+        const EDITOR_GRID = 40;
+        const EDITOR_STORAGE_KEY = 'greenbeanCustomLevel';
+
+        const EDITOR_ENEMY_COLORS = {
+            normal: '#e74c3c',
+            fast: '#e67e22',
+            tank: '#95a5a6',
+            flyer: '#2ecc71',
+            jumper: '#e84393',
+            shooter: '#00bcd4'
+        };
+        const EDITOR_ENEMY_SIZES = { tank: 70, fast: 35 };
+        const EDITOR_POWERUP_ICONS = {
+            speed: '⚡', doubleJump: '🦘', shield: '🛡️', rapidFire: '🔥',
+            zeroGravity: '🎈', bigBoy: '💪', enemySleep: '💤', invincibility: '✨'
+        };
+
+        let editorLevel = null;
+        let editorCameraX = 0;
+        let editorTool = 'platform';
+        let editorDrag = null; // { startWX, startWY, curWX, curWY } while drawing a platform
+
+        function freshEditorLevel() {
+            const groundY = HEIGHT - PLATFORM_Y_INCREMENT;
+            return {
+                width: EDITOR_LEVEL_WIDTH,
+                platforms: [{ x: 0, y: groundY, width: EDITOR_LEVEL_WIDTH, height: PLATFORM_Y_INCREMENT, ground: true }],
+                enemies: [],
+                collectibles: [],
+                powerupItems: [],
+                healthPickups: [],
+                start: { x: 120, y: groundY - 100 },
+                goal: { x: EDITOR_LEVEL_WIDTH - 300, y: groundY - 150, width: 100, height: 150 }
+            };
+        }
+
+        function snapGrid(v) {
+            return Math.round(v / EDITOR_GRID) * EDITOR_GRID;
+        }
+
+        function clampEditorCamera(x) {
+            return Math.max(0, Math.min(x, editorLevel.width - WIDTH));
+        }
+
+        function setEditorTool(tool) {
+            editorTool = tool;
+            document.querySelectorAll('.ed-tool').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tool === tool);
+            });
+        }
+
+        function setEditorHint(msg) {
+            document.getElementById('edHint').textContent = msg;
+        }
+
+        function loadSavedLevel() {
+            const raw = localStorage.getItem(EDITOR_STORAGE_KEY);
+            if (!raw) return null;
+            try {
+                const data = JSON.parse(raw);
+                const base = freshEditorLevel();
+                return {
+                    width: data.width || base.width,
+                    platforms: Array.isArray(data.platforms) && data.platforms.length ? data.platforms : base.platforms,
+                    enemies: Array.isArray(data.enemies) ? data.enemies : [],
+                    collectibles: Array.isArray(data.collectibles) ? data.collectibles : [],
+                    powerupItems: Array.isArray(data.powerupItems) ? data.powerupItems : [],
+                    healthPickups: Array.isArray(data.healthPickups) ? data.healthPickups : [],
+                    start: data.start || base.start,
+                    goal: data.goal || base.goal
+                };
+            } catch (err) {
+                console.error('Could not load saved level:', err);
+                return null;
+            }
+        }
+
+        function saveCustomLevel() {
+            localStorage.setItem(EDITOR_STORAGE_KEY, JSON.stringify(editorLevel));
+            setEditorHint('💾 Saved! Your level will be waiting here next time.');
+        }
+
+        function clearCustomLevel() {
+            editorLevel = freshEditorLevel();
+            editorCameraX = 0;
+            setEditorHint('🗑 Cleared. Your saved level is still safe until you press Save again.');
+        }
+
+        function openEditor() {
+            if (!audioContext) initAudio();
+            editorLevel = loadSavedLevel() || freshEditorLevel();
+            editorCameraX = 0;
+            editorDrag = null;
+            setEditorTool('platform');
+            stopMusic();
+            playingCustom = false;
+            gameState = 'EDITOR';
+            ['startScreen', 'levelComplete', 'gameOver', 'customComplete'].forEach(id =>
+                document.getElementById(id).classList.add('hidden'));
+            document.getElementById('editorScreen').classList.remove('hidden');
+            document.getElementById('ui').style.display = 'none';
+            setEditorHint('Pick a tool, then click the level to place • Drag to draw platforms • ← → keys or scroll wheel to move');
+        }
+
+        function backToStartFromEditor() {
+            gameState = 'START';
+            document.getElementById('editorScreen').classList.add('hidden');
+            document.getElementById('ui').style.display = '';
+            document.getElementById('startScreen').classList.remove('hidden');
+            document.getElementById('highScore').textContent = highScore;
+        }
+
+        function returnToEditor() {
+            stopMusic();
+            playingCustom = false;
+            gameState = 'EDITOR';
+            document.getElementById('customComplete').classList.add('hidden');
+            document.getElementById('gameOver').classList.add('hidden');
+            document.getElementById('editorScreen').classList.remove('hidden');
+            document.getElementById('ui').style.display = 'none';
+        }
+
+        function enemyHealthForType(type) {
+            const base = 2;
+            if (type === 'tank') return base * 2;
+            if (type === 'fast') return 1;
+            return base;
+        }
+
+        function buildPlayableCustomLevel() {
+            const platforms = editorLevel.platforms.map(p => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
+            const enemies = editorLevel.enemies.map(ed => new Enemy({
+                x: ed.x,
+                y: ed.y,
+                vx: (Math.random() - 0.5) * 2,
+                health: enemyHealthForType(ed.enemyType),
+                type: 'ground',
+                enemyType: ed.enemyType
+            }));
+            const collectibles = editorLevel.collectibles.map(c => ({ x: c.x, y: c.y }));
+            const powerupItems = editorLevel.powerupItems.map(p => ({ x: p.x, y: p.y, type: p.type }));
+            const healthPickups = editorLevel.healthPickups.map(h => ({ x: h.x, y: h.y }));
+            const goal = editorLevel.goal
+                ? { x: editorLevel.goal.x, y: editorLevel.goal.y, width: editorLevel.goal.width, height: editorLevel.goal.height }
+                : null;
+            return { platforms, enemies, collectibles, powerupItems, healthPickups, goal, width: editorLevel.width };
+        }
+
+        function playCustomLevel() {
+            if (!editorLevel) editorLevel = loadSavedLevel() || freshEditorLevel();
+            if (!audioContext) initAudio();
+
+            ['editorScreen', 'startScreen', 'levelComplete', 'gameOver', 'customComplete'].forEach(id =>
+                document.getElementById(id).classList.add('hidden'));
+            document.getElementById('ui').style.display = '';
+            document.getElementById('bossWarning').classList.add('hidden');
+            document.getElementById('miniGameWarning').classList.add('hidden');
+
+            gameState = 'PLAYING';
+            playingCustom = true;
+            currentLevel = 1;
+            score = 0;
+            cameraX = 0;
+            boss = null;
+
+            const player = new Player(0, editorLevel.start.x);
+            player.y = editorLevel.start.y;
+            players = [player];
+
+            level = buildPlayableCustomLevel();
+            particles = [];
+            projectiles = [];
+            bossProjectiles = [];
+            enemyProjectiles = [];
+            levelStartTime = gameTime;
+
+            updatePlayerUIVisibility();
+            updateUI();
+            startMusic();
+        }
+
+        function editorCanvasPoint(e) {
+            const rect = gameCanvas.getBoundingClientRect();
+            const cx = (e.clientX - rect.left) * (gameCanvas.width / rect.width);
+            const cy = (e.clientY - rect.top) * (gameCanvas.height / rect.height);
+            return { cx, cy, wx: cx + editorCameraX, wy: cy };
+        }
+
+        function editorDragRect() {
+            if (!editorDrag) return null;
+            const x1 = snapGrid(Math.min(editorDrag.startWX, editorDrag.curWX));
+            const x2 = snapGrid(Math.max(editorDrag.startWX, editorDrag.curWX));
+            let width = x2 - x1;
+            if (width < EDITOR_GRID * 2) width = EDITOR_GRID * 2;
+            return { x: x1, y: snapGrid(editorDrag.startWY), width, height: PLATFORM_HEIGHT };
+        }
+
+        function editorPlaceAt(wx, wy) {
+            const gx = snapGrid(wx);
+            const gy = snapGrid(wy);
+            switch (editorTool) {
+                case 'enemy':
+                    editorLevel.enemies.push({ x: gx, y: gy, enemyType: document.getElementById('enemyTypeSelect').value });
+                    break;
+                case 'coin':
+                    editorLevel.collectibles.push({ x: gx, y: gy });
+                    break;
+                case 'powerup':
+                    editorLevel.powerupItems.push({ x: gx, y: gy, type: document.getElementById('powerupTypeSelect').value });
+                    break;
+                case 'health':
+                    editorLevel.healthPickups.push({ x: gx, y: gy });
+                    break;
+                case 'start':
+                    editorLevel.start = { x: gx, y: gy };
+                    break;
+                case 'goal':
+                    editorLevel.goal = { x: gx - 50, y: gy, width: 100, height: 150 };
+                    break;
+            }
+        }
+
+        function editorEraseAt(wx, wy) {
+            for (let i = editorLevel.enemies.length - 1; i >= 0; i--) {
+                const en = editorLevel.enemies[i];
+                const reach = (EDITOR_ENEMY_SIZES[en.enemyType] || 50) / 2 + 6;
+                if (Math.abs(en.x - wx) < reach && Math.abs(en.y - wy) < reach) { editorLevel.enemies.splice(i, 1); return; }
+            }
+            for (let i = editorLevel.collectibles.length - 1; i >= 0; i--) {
+                const c = editorLevel.collectibles[i];
+                if (Math.abs(c.x - wx) < 20 && Math.abs(c.y - wy) < 24) { editorLevel.collectibles.splice(i, 1); return; }
+            }
+            for (let i = editorLevel.powerupItems.length - 1; i >= 0; i--) {
+                const pu = editorLevel.powerupItems[i];
+                if (Math.abs(pu.x - wx) < 22 && Math.abs(pu.y - wy) < 22) { editorLevel.powerupItems.splice(i, 1); return; }
+            }
+            for (let i = editorLevel.healthPickups.length - 1; i >= 0; i--) {
+                const h = editorLevel.healthPickups[i];
+                if (Math.abs(h.x - wx) < 20 && Math.abs(h.y - wy) < 22) { editorLevel.healthPickups.splice(i, 1); return; }
+            }
+            for (let i = editorLevel.platforms.length - 1; i >= 0; i--) {
+                const pl = editorLevel.platforms[i];
+                if (pl.ground) continue;
+                if (wx >= pl.x && wx <= pl.x + pl.width && wy >= pl.y - 4 && wy <= pl.y + pl.height + 4) {
+                    editorLevel.platforms.splice(i, 1); return;
+                }
+            }
+        }
+
+        function handleEditorKey(e) {
+            const step = EDITOR_GRID * 4;
+            if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
+                editorCameraX = clampEditorCamera(editorCameraX + step);
+                e.preventDefault();
+            } else if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
+                editorCameraX = clampEditorCamera(editorCameraX - step);
+                e.preventDefault();
+            } else if (e.key === 'Escape') {
+                backToStartFromEditor();
+            }
+        }
+
+        function renderEditor() {
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+            // Grid
+            ctx.strokeStyle = 'rgba(0, 255, 0, 0.08)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            const off = editorCameraX % EDITOR_GRID;
+            for (let x = -off; x <= WIDTH; x += EDITOR_GRID) {
+                ctx.moveTo(x, 0); ctx.lineTo(x, HEIGHT);
+            }
+            for (let y = 0; y <= HEIGHT; y += EDITOR_GRID) {
+                ctx.moveTo(0, y); ctx.lineTo(WIDTH, y);
+            }
+            ctx.stroke();
+
+            // Level-end marker
+            const endX = editorLevel.width - editorCameraX;
+            if (endX >= 0 && endX <= WIDTH) {
+                ctx.strokeStyle = 'rgba(255, 60, 60, 0.6)';
+                ctx.setLineDash([12, 10]);
+                ctx.beginPath();
+                ctx.moveTo(endX, 0); ctx.lineTo(endX, HEIGHT);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Platforms
+            editorLevel.platforms.forEach(p => {
+                const sx = p.x - editorCameraX;
+                ctx.fillStyle = p.ground ? '#3d2a14' : '#654321';
+                ctx.fillRect(sx, p.y, p.width, p.height);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(sx, p.y, p.width, p.height);
+            });
+
+            // Collectibles
+            editorLevel.collectibles.forEach(c => {
+                const sx = c.x - editorCameraX;
+                ctx.fillStyle = '#ffd700';
+                ctx.fillRect(sx - 10, c.y - 15, 20, 30);
+                ctx.fillStyle = '#ffed4e';
+                ctx.fillRect(sx - 10, c.y - 15, 20, 6);
+            });
+
+            ctx.textAlign = 'center';
+
+            // Power-ups
+            editorLevel.powerupItems.forEach(p => {
+                ctx.font = '30px Arial';
+                ctx.fillText(EDITOR_POWERUP_ICONS[p.type] || '❓', p.x - editorCameraX, p.y + 10);
+            });
+
+            // Health pickups
+            editorLevel.healthPickups.forEach(h => {
+                ctx.font = '26px Arial';
+                ctx.fillText('❤️', h.x - editorCameraX, h.y + 10);
+            });
+
+            // Enemies
+            editorLevel.enemies.forEach(en => {
+                const sx = en.x - editorCameraX;
+                const size = EDITOR_ENEMY_SIZES[en.enemyType] || 50;
+                const half = size / 2;
+                ctx.fillStyle = EDITOR_ENEMY_COLORS[en.enemyType] || '#e74c3c';
+                ctx.fillRect(sx - half, en.y - half, size, size);
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(sx - half, en.y - half, size, size);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 12px Courier New';
+                ctx.fillText(en.enemyType.charAt(0).toUpperCase(), sx, en.y - half - 5);
+            });
+
+            // Goal
+            if (editorLevel.goal) {
+                const g = editorLevel.goal;
+                const sx = g.x - editorCameraX;
+                ctx.fillStyle = '#8bc34a';
+                ctx.fillRect(sx, g.y, g.width, g.height);
+                ctx.strokeStyle = '#33691e';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(sx, g.y, g.width, g.height);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 16px Courier New';
+                ctx.fillText('GOAL', sx + g.width / 2, g.y + g.height / 2 + 5);
+            }
+
+            // Start marker
+            const s = editorLevel.start;
+            const ssx = s.x - editorCameraX;
+            ctx.fillStyle = '#6fb33f';
+            ctx.beginPath();
+            ctx.arc(ssx, s.y, 20, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#2d5016';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 11px Courier New';
+            ctx.fillText('START', ssx, s.y + 4);
+
+            // Platform drag preview
+            const rect = editorDragRect();
+            if (rect) {
+                ctx.fillStyle = 'rgba(101, 67, 33, 0.6)';
+                ctx.fillRect(rect.x - editorCameraX, rect.y, rect.width, rect.height);
+                ctx.strokeStyle = '#0ff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(rect.x - editorCameraX, rect.y, rect.width, rect.height);
+            }
+
+            ctx.textAlign = 'left';
+        }
+
+        // Editor input wiring
+        document.querySelectorAll('.ed-tool').forEach(btn => {
+            btn.addEventListener('click', () => setEditorTool(btn.dataset.tool));
+        });
+        document.getElementById('enemyTypeSelect').addEventListener('change', () => setEditorTool('enemy'));
+        document.getElementById('powerupTypeSelect').addEventListener('change', () => setEditorTool('powerup'));
+
+        gameCanvas.addEventListener('mousedown', (e) => {
+            if (gameState !== 'EDITOR') return;
+            const pt = editorCanvasPoint(e);
+            if (editorTool === 'platform') {
+                editorDrag = { startWX: pt.wx, startWY: pt.wy, curWX: pt.wx, curWY: pt.wy };
+            } else if (editorTool === 'erase') {
+                editorEraseAt(pt.wx, pt.wy);
+            } else {
+                editorPlaceAt(pt.wx, pt.wy);
+            }
+        });
+
+        gameCanvas.addEventListener('mousemove', (e) => {
+            if (gameState !== 'EDITOR' || !editorDrag) return;
+            const pt = editorCanvasPoint(e);
+            editorDrag.curWX = pt.wx;
+            editorDrag.curWY = pt.wy;
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (gameState !== 'EDITOR' || !editorDrag) return;
+            const rect = editorDragRect();
+            if (rect) {
+                editorLevel.platforms.push({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+            }
+            editorDrag = null;
+        });
+
+        gameCanvas.addEventListener('wheel', (e) => {
+            if (gameState !== 'EDITOR') return;
+            e.preventDefault();
+            editorCameraX = clampEditorCamera(editorCameraX + e.deltaY + e.deltaX);
+        }, { passive: false });
+
         let lastTime = performance.now();
 
         function gameLoop() {
@@ -3272,6 +3867,8 @@
             if (gameState === 'PLAYING') {
                 updateGame(dt);
                 renderGame();
+            } else if (gameState === 'EDITOR') {
+                renderEditor();
             }
 
             requestAnimationFrame(gameLoop);
