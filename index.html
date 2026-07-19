@@ -360,7 +360,7 @@
                 <button class="ed-action" onclick="clearCustomLevel()">🗑 Clear</button>
                 <button class="ed-action" onclick="backToStartFromEditor()">⬅ Back</button>
             </div>
-            <div id="edHint">Pick a tool, then click the level to place • Drag to draw platforms • ← → keys or scroll wheel to move</div>
+            <div id="edHint">Pick a tool, then click or drag to place many • Drag to draw platforms • ← → keys or scroll wheel to move</div>
         </div>
     </div>
 
@@ -3928,6 +3928,8 @@
         let editorCameraX = 0;
         let editorTool = 'platform';
         let editorDrag = null; // { startWX, startWY, curWX, curWY } while drawing a platform
+        let editorPainting = false; // true while dragging to place/erase many items
+        let lastPaintCell = null;   // grid cell last painted, so we place one item per cell
 
         function freshEditorLevel() {
             const groundY = HEIGHT - PLATFORM_Y_INCREMENT;
@@ -4008,7 +4010,7 @@
                 document.getElementById(id).classList.add('hidden'));
             document.getElementById('editorScreen').classList.remove('hidden');
             document.getElementById('ui').style.display = 'none';
-            setEditorHint('Pick a tool, then click the level to place • Drag to draw platforms • ← → keys or scroll wheel to move');
+            setEditorHint('Pick a tool, then click or drag to place many • Drag to draw platforms • ← → keys or scroll wheel to move');
         }
 
         function backToStartFromEditor() {
@@ -4108,9 +4110,22 @@
             const gx = snapGrid(wx);
             const gy = snapGrid(wy);
             switch (editorTool) {
-                case 'enemy':
-                    editorLevel.enemies.push({ x: gx, y: gy, enemyType: document.getElementById('enemyTypeSelect').value });
+                case 'enemy': {
+                    // Enemies are bigger than one grid cell, so refuse a spot that would
+                    // overlap an existing enemy (keeps them from stacking when dragging).
+                    const enemyType = document.getElementById('enemyTypeSelect').value;
+                    const size = EDITOR_ENEMY_SIZES[enemyType] || 50;
+                    const overlaps = editorLevel.enemies.some(en => {
+                        const minGap = (size + (EDITOR_ENEMY_SIZES[en.enemyType] || 50)) / 2;
+                        return Math.abs(en.x - gx) < minGap && Math.abs(en.y - gy) < minGap;
+                    });
+                    if (overlaps) {
+                        setEditorHint('👾 Too close to another enemy — leave a little more space.');
+                    } else {
+                        editorLevel.enemies.push({ x: gx, y: gy, enemyType: enemyType });
+                    }
                     break;
+                }
                 case 'coin':
                     editorLevel.collectibles.push({ x: gx, y: gy });
                     break;
@@ -4292,32 +4307,53 @@
         document.getElementById('enemyTypeSelect').addEventListener('change', () => setEditorTool('enemy'));
         document.getElementById('powerupTypeSelect').addEventListener('change', () => setEditorTool('powerup'));
 
+        // Apply the current point/erase tool at a world position
+        function editorApplyTool(wx, wy) {
+            if (editorTool === 'erase') editorEraseAt(wx, wy);
+            else editorPlaceAt(wx, wy);
+        }
+
         gameCanvas.addEventListener('mousedown', (e) => {
             if (gameState !== 'EDITOR') return;
             const pt = editorCanvasPoint(e);
             if (editorTool === 'platform') {
                 editorDrag = { startWX: pt.wx, startWY: pt.wy, curWX: pt.wx, curWY: pt.wy };
-            } else if (editorTool === 'erase') {
-                editorEraseAt(pt.wx, pt.wy);
             } else {
-                editorPlaceAt(pt.wx, pt.wy);
+                // Start painting: place/erase now, then continue while dragging
+                editorPainting = true;
+                lastPaintCell = snapGrid(pt.wx) + ',' + snapGrid(pt.wy);
+                editorApplyTool(pt.wx, pt.wy);
             }
         });
 
         gameCanvas.addEventListener('mousemove', (e) => {
-            if (gameState !== 'EDITOR' || !editorDrag) return;
+            if (gameState !== 'EDITOR') return;
+            if (!editorDrag && !editorPainting) return;
             const pt = editorCanvasPoint(e);
-            editorDrag.curWX = pt.wx;
-            editorDrag.curWY = pt.wy;
+            if (editorDrag) {
+                editorDrag.curWX = pt.wx;
+                editorDrag.curWY = pt.wy;
+            } else {
+                // Paint one item per grid cell as the cursor moves into a new cell
+                const cell = snapGrid(pt.wx) + ',' + snapGrid(pt.wy);
+                if (cell !== lastPaintCell) {
+                    lastPaintCell = cell;
+                    editorApplyTool(pt.wx, pt.wy);
+                }
+            }
         });
 
         window.addEventListener('mouseup', () => {
-            if (gameState !== 'EDITOR' || !editorDrag) return;
-            const rect = editorDragRect();
-            if (rect) {
-                editorLevel.platforms.push({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+            if (gameState !== 'EDITOR') return;
+            if (editorDrag) {
+                const rect = editorDragRect();
+                if (rect) {
+                    editorLevel.platforms.push({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+                }
+                editorDrag = null;
             }
-            editorDrag = null;
+            editorPainting = false;
+            lastPaintCell = null;
         });
 
         gameCanvas.addEventListener('wheel', (e) => {
