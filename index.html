@@ -1936,27 +1936,58 @@
             }
         }
 
+        // Distinct boss archetypes. Each varies in look, movement, and attacks.
+        // gravityFactor 0 = flyer (hovers). minionInterval Infinity = never spawns minions.
+        const BOSS_CONFIGS = {
+            chef:    { name: 'THE CHEF',        body: '#0033cc', accent: '#4466ff', trim: '#ffffff', size: 80,  healthMult: 1.0,  gravityFactor: 1, proj: '#ff3300', minionInterval: 5 },
+            inferno: { name: 'THE INFERNO',     body: '#cc2200', accent: '#ff7700', trim: '#ffdd00', size: 78,  healthMult: 0.9,  gravityFactor: 1, proj: '#ff7700', minionInterval: Infinity },
+            frost:   { name: 'THE FROST GOLEM', body: '#4a9cc9', accent: '#d6f2ff', trim: '#ffffff', size: 104, healthMult: 1.5,  gravityFactor: 1, proj: '#88ddff', minionInterval: Infinity },
+            swarm:   { name: 'THE SWARM QUEEN', body: '#5a2d82', accent: '#3ddc84', trim: '#c9a0ff', size: 76,  healthMult: 0.85, gravityFactor: 0, proj: '#a0ff40', minionInterval: 1.6 },
+            volt:    { name: 'THE VOLT',        body: '#e6c200', accent: '#fff480', trim: '#222222', size: 70,  healthMult: 0.8,  gravityFactor: 1, proj: '#ffee33', minionInterval: Infinity },
+            shadow:  { name: 'THE SHADOW',      body: '#2a0d45', accent: '#8b5fcf', trim: '#c9a0ff', size: 84,  healthMult: 1.1,  gravityFactor: 1, proj: '#b060ff', minionInterval: 4 },
+            mega:    { name: 'THE FINAL BEAN',  body: '#141414', accent: '#ff00aa', trim: '#00ffcc', size: 120, healthMult: 1.6,  gravityFactor: 1, proj: '#ff33bb', minionInterval: 3 }
+        };
+        // Boss for level N*10 uses BOSS_SEQUENCE[N-1]; the level-100 boss is the finale.
+        const BOSS_SEQUENCE = ['chef', 'inferno', 'frost', 'swarm', 'volt', 'shadow', 'chef', 'inferno', 'frost', 'mega'];
+
         class Boss {
             constructor(x, y, levelNum = 10) {
+                const bossNumber = levelNum / 10;
+                this.bossType = BOSS_SEQUENCE[Math.min(BOSS_SEQUENCE.length, Math.max(1, Math.round(bossNumber))) - 1];
+                this.config = BOSS_CONFIGS[this.bossType];
+
                 this.x = x;
                 this.y = y;
-                this.vx = 2;
+                this.baseY = y;
+                this.vx = this.bossType === 'frost' ? 1.2 : this.bossType === 'volt' ? 6 : 2;
                 this.vy = 0;
-                this.size = 80;
-                // Scale health based on level: starts at 50, adds 10 per boss level
-                const bossNumber = levelNum / 10;
-                this.health = 50 + (bossNumber - 1) * 10;
+                this.size = this.config.size;
+                // Scale health based on level (base 50, +10 per boss level) times the archetype's multiplier
+                this.health = Math.round((50 + (bossNumber - 1) * 10) * this.config.healthMult);
                 this.maxHealth = this.health;
                 this.attackCooldown = 0;
                 this.phase = 1;
                 this.angle = 0;
                 this.jumpCooldown = 0;
                 this.minionSpawnCooldown = 0;
+                this.dashTimer = 0;
+                this.teleportTimer = 4;
+                this.megaToggle = false;
+                this.onGround = false;
                 this.levelNum = levelNum;
+                this.targetX = x;
+                this.targetY = y;
+            }
+
+            aimAt(speed) {
+                const dx = this.targetX - this.x;
+                const dy = this.targetY - this.y;
+                const d = Math.hypot(dx, dy) || 1;
+                return { vx: (dx / d) * speed, vy: (dy / d) * speed };
             }
 
             update(dt, platforms, players) {
-                // Find nearest alive player for chase behavior
+                // Find nearest alive player for chase/aim behavior
                 const playersArr = Array.isArray(players) ? players : [players];
                 let nearestPlayer = null;
                 let nearestDist = Infinity;
@@ -1968,37 +1999,92 @@
                         nearestPlayer = p;
                     }
                 });
+                // Aim target for shots (defaults to own position when no player is alive)
+                this.targetX = nearestPlayer ? nearestPlayer.x : this.x;
+                this.targetY = nearestPlayer ? nearestPlayer.y : this.y;
+                const dirToTarget = this.targetX > this.x ? 1 : -1;
 
-                // Movement patterns based on phase
-                if (this.phase === 1) {
-                    // Phase 1: Back and forth movement
+                if (this.config.gravityFactor === 0) {
+                    // Flyer: hover and drift toward the player, ignoring gravity
+                    this.vx = dirToTarget * 1.8;
                     this.x += this.vx * dt * 60;
-                    if (this.x < 200 || this.x > 1000) {
-                        this.vx *= -1;
-                    }
-                } else if (this.phase === 2) {
-                    // Phase 2: Chase nearest player
-                    if (nearestPlayer) {
-                        const dx = nearestPlayer.x - this.x;
-                        this.vx = dx > 0 ? 3 : -3;
-                    }
-                    this.x += this.vx * dt * 60;
-
-                    // Jump occasionally
-                    if (this.jumpCooldown <= 0 && this.onGround) {
-                        this.vy = -18;
-                        this.jumpCooldown = 2;
-                    }
+                    this.y = this.baseY + Math.sin(this.angle * 2) * 70;
                 } else {
-                    // Phase 3: Erratic movement
-                    this.vx += (Math.random() - 0.5) * 2;
-                    this.vx = Math.max(-5, Math.min(5, this.vx));
-                    this.x += this.vx * dt * 60;
-
-                    if (this.jumpCooldown <= 0 && this.onGround) {
-                        this.vy = -20;
-                        this.jumpCooldown = 1;
+                    // Ground-based movement, unique per archetype
+                    switch (this.bossType) {
+                        case 'chef':
+                            if (this.phase === 1) {
+                                this.x += this.vx * dt * 60;
+                                if (this.x < 200 || this.x > 1000) this.vx *= -1;
+                            } else if (this.phase === 2) {
+                                this.vx = dirToTarget * 3;
+                                this.x += this.vx * dt * 60;
+                                if (this.jumpCooldown <= 0 && this.onGround) { this.vy = -18; this.jumpCooldown = 2; }
+                            } else {
+                                this.vx += (Math.random() - 0.5) * 2;
+                                this.vx = Math.max(-5, Math.min(5, this.vx));
+                                this.x += this.vx * dt * 60;
+                                if (this.jumpCooldown <= 0 && this.onGround) { this.vy = -20; this.jumpCooldown = 1; }
+                            }
+                            break;
+                        case 'inferno': {
+                            const spd = 3.5 + this.phase * 0.7;
+                            this.vx = dirToTarget * spd;
+                            this.x += this.vx * dt * 60;
+                            if (this.jumpCooldown <= 0 && this.onGround) { this.vy = -16; this.jumpCooldown = this.phase === 3 ? 0.6 : 1; }
+                            break;
+                        }
+                        case 'frost':
+                            this.x += this.vx * dt * 60;
+                            if (this.x < 250 || this.x > 950) this.vx *= -1;
+                            break;
+                        case 'volt':
+                            this.dashTimer -= dt;
+                            if (this.dashTimer <= 0) {
+                                this.vx = dirToTarget * (7 + this.phase);
+                                this.dashTimer = 0.5;
+                            }
+                            this.x += this.vx * dt * 60;
+                            if (this.jumpCooldown <= 0 && this.onGround) { this.vy = -12; this.jumpCooldown = 1.5; }
+                            break;
+                        case 'shadow':
+                            this.vx += (Math.random() - 0.5) * 3;
+                            this.vx = Math.max(-4, Math.min(4, this.vx));
+                            this.x += this.vx * dt * 60;
+                            this.teleportTimer -= dt;
+                            if (this.teleportTimer <= 0) {
+                                this.x = 250 + Math.random() * 700;
+                                this.vy = -6;
+                                this.teleportTimer = this.phase === 3 ? 2.5 : 4;
+                                for (let i = 0; i < 20; i++) particles.push(new Particle(this.x, this.y, this.config.accent));
+                                playSound('powerup');
+                            }
+                            if (this.jumpCooldown <= 0 && this.onGround) { this.vy = -15; this.jumpCooldown = 2; }
+                            break;
+                        case 'mega': {
+                            const spd = 3 + this.phase;
+                            this.vx = dirToTarget * spd;
+                            this.x += this.vx * dt * 60;
+                            if (this.jumpCooldown <= 0 && this.onGround) { this.vy = -20; this.jumpCooldown = 1.2; }
+                            break;
+                        }
                     }
+
+                    // Gravity + platform collision
+                    this.vy += GRAVITY * this.config.gravityFactor;
+                    this.y += this.vy * dt * 60;
+                    this.onGround = false;
+                    platforms.forEach(plat => {
+                        if (this.x + this.size/2 > plat.x &&
+                            this.x - this.size/2 < plat.x + plat.width &&
+                            this.y + this.size/2 > plat.y &&
+                            this.y + this.size/2 < plat.y + plat.height &&
+                            this.vy >= 0) {
+                            this.y = plat.y - this.size/2;
+                            this.vy = 0;
+                            this.onGround = true;
+                        }
+                    });
                 }
 
                 // Keep boss within arena bounds (boss arena is 1200 wide)
@@ -2012,24 +2098,6 @@
                     this.vx = -Math.abs(this.vx); // Bounce off right wall
                 }
 
-                // Gravity
-                this.vy += GRAVITY;
-                this.y += this.vy * dt * 60;
-
-                // Platform collision
-                this.onGround = false;
-                platforms.forEach(plat => {
-                    if (this.x + this.size/2 > plat.x &&
-                        this.x - this.size/2 < plat.x + plat.width &&
-                        this.y + this.size/2 > plat.y &&
-                        this.y + this.size/2 < plat.y + plat.height &&
-                        this.vy >= 0) {
-                        this.y = plat.y - this.size/2;
-                        this.vy = 0;
-                        this.onGround = true;
-                    }
-                });
-
                 // Update phase based on health
                 if (this.health < this.maxHealth * 0.66 && this.phase === 1) {
                     this.phase = 2;
@@ -2039,30 +2107,22 @@
                     playSound('powerup');
                 }
 
-                // Attack cooldown
-                if (this.attackCooldown > 0) {
-                    this.attackCooldown -= dt;
-                }
-                if (this.jumpCooldown > 0) {
-                    this.jumpCooldown -= dt;
-                }
-
-                // Minion spawn cooldown
-                if (this.minionSpawnCooldown > 0) {
-                    this.minionSpawnCooldown -= dt;
-                }
+                // Cooldowns
+                if (this.attackCooldown > 0) this.attackCooldown -= dt;
+                if (this.jumpCooldown > 0) this.jumpCooldown -= dt;
+                if (this.minionSpawnCooldown > 0) this.minionSpawnCooldown -= dt;
 
                 this.angle += dt * 2;
             }
 
             spawnMinion() {
+                if (this.config.minionInterval === Infinity) return null;
                 if (this.minionSpawnCooldown > 0) return null;
 
                 // Spawn rate increases with phase
-                const spawnInterval = this.phase === 1 ? 5 : (this.phase === 2 ? 3 : 2);
-                this.minionSpawnCooldown = spawnInterval;
+                const base = this.config.minionInterval;
+                this.minionSpawnCooldown = this.phase === 3 ? base * 0.5 : (this.phase === 2 ? base * 0.75 : base);
 
-                // Create a small blue minion
                 const offsetX = (Math.random() > 0.5 ? 1 : -1) * 100;
                 return new Enemy({
                     x: this.x + offsetX,
@@ -2075,103 +2135,386 @@
                 });
             }
 
+            // Returns null, a single projectile, or an array of projectiles.
+            // Projectile shape: { x, y, vx, vy, size, color, isBoss }
             shoot() {
                 if (this.attackCooldown > 0) return null;
 
-                this.attackCooldown = this.phase === 3 ? 0.3 : (this.phase === 2 ? 0.5 : 1);
+                const color = this.config.proj;
+                const mk = (vx, vy, size) => ({ x: this.x, y: this.y, vx, vy, size: size || 12, color, isBoss: true });
+                const baseAngle = Math.atan2(this.targetY - this.y, this.targetX - this.x);
 
-                // Shoot towards player
-                return {
-                    x: this.x,
-                    y: this.y,
-                    vx: this.vx > 0 ? 10 : -10,
-                    size: 12,
-                    isBoss: true
-                };
+                switch (this.bossType) {
+                    case 'chef': {
+                        this.attackCooldown = this.phase === 3 ? 0.3 : (this.phase === 2 ? 0.5 : 1);
+                        const a = this.aimAt(9);
+                        return mk(a.vx, a.vy);
+                    }
+                    case 'inferno': {
+                        // Three-way fan aimed at the player
+                        this.attackCooldown = this.phase === 3 ? 0.35 : (this.phase === 2 ? 0.5 : 0.7);
+                        const speed = 9;
+                        return [-0.25, 0, 0.25].map(off =>
+                            mk(Math.cos(baseAngle + off) * speed, Math.sin(baseAngle + off) * speed, 11));
+                    }
+                    case 'frost': {
+                        // Slow, heavy iceball
+                        this.attackCooldown = this.phase === 3 ? 0.8 : (this.phase === 2 ? 1.1 : 1.4);
+                        const a = this.aimAt(6);
+                        return mk(a.vx, a.vy, 22);
+                    }
+                    case 'swarm': {
+                        // Sparse spit (relies mostly on minions)
+                        this.attackCooldown = this.phase === 3 ? 1 : (this.phase === 2 ? 1.2 : 1.5);
+                        const a = this.aimAt(8);
+                        return mk(a.vx, a.vy);
+                    }
+                    case 'volt': {
+                        // Rapid single bolts
+                        this.attackCooldown = this.phase === 3 ? 0.12 : (this.phase === 2 ? 0.18 : 0.25);
+                        const a = this.aimAt(13);
+                        return mk(a.vx, a.vy, 9);
+                    }
+                    case 'shadow': {
+                        // Radial burst of 5
+                        this.attackCooldown = this.phase === 3 ? 0.7 : (this.phase === 2 ? 0.9 : 1.2);
+                        const speed = 7;
+                        const n = 5;
+                        const shots = [];
+                        for (let i = 0; i < n; i++) {
+                            const ang = this.angle + i * (Math.PI * 2 / n);
+                            shots.push(mk(Math.cos(ang) * speed, Math.sin(ang) * speed));
+                        }
+                        return shots;
+                    }
+                    case 'mega': {
+                        // Alternates an 8-way radial burst and a 4-way aimed fan
+                        this.attackCooldown = 0.5;
+                        this.megaToggle = !this.megaToggle;
+                        if (this.megaToggle) {
+                            const speed = 8;
+                            const n = 8;
+                            const shots = [];
+                            for (let i = 0; i < n; i++) {
+                                const ang = this.angle + i * (Math.PI * 2 / n);
+                                shots.push(mk(Math.cos(ang) * speed, Math.sin(ang) * speed));
+                            }
+                            return shots;
+                        }
+                        const speed = 10;
+                        return [-0.3, -0.1, 0.1, 0.3].map(off =>
+                            mk(Math.cos(baseAngle + off) * speed, Math.sin(baseAngle + off) * speed, 13));
+                    }
+                    default:
+                        return null;
+                }
             }
 
             draw(ctx, cameraX) {
                 const screenX = this.x - cameraX;
-
                 ctx.save();
                 ctx.translate(screenX, this.y);
+                this.drawBody(ctx);
+                this.drawHealthBar(ctx);
+                ctx.restore();
+            }
 
+            drawBody(ctx) {
+                switch (this.bossType) {
+                    case 'chef': this.drawChef(ctx); break;
+                    case 'inferno': this.drawInferno(ctx); break;
+                    case 'frost': this.drawFrost(ctx); break;
+                    case 'swarm': this.drawSwarm(ctx); break;
+                    case 'volt': this.drawVolt(ctx); break;
+                    case 'shadow': this.drawShadow(ctx); break;
+                    case 'mega': this.drawMega(ctx); break;
+                    default: this.drawChef(ctx);
+                }
+            }
+
+            drawHealthBar(ctx) {
+                const s = this.size;
+                ctx.fillStyle = '#000';
+                ctx.fillRect(-s/2, -s/2 - 30, s, 8);
+                const hp = Math.max(0, this.health / this.maxHealth);
+                ctx.fillStyle = hp > 0.5 ? '#0f0' : (hp > 0.25 ? '#ff0' : '#f00');
+                ctx.fillRect(-s/2 + 2, -s/2 - 28, (s - 4) * hp, 4);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 12px "Courier New"';
+                ctx.textAlign = 'center';
+                ctx.fillText(this.config.name, 0, -s/2 - 36);
+                ctx.textAlign = 'left';
+            }
+
+            drawChef(ctx) {
+                const s = this.size, c = this.config;
                 // Chef hat
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
-                ctx.arc(0, -this.size/2 - 15, this.size/3, 0, Math.PI * 2);
+                ctx.arc(0, -s/2 - 15, s/3, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.fillRect(-this.size/4, -this.size/2 - 5, this.size/2, 10);
-
-                // Pulsing effect based on phase
-                const pulseScale = 1 + Math.sin(this.angle * 3) * 0.05;
-                ctx.scale(pulseScale, pulseScale);
-
-                // Main body - larger and scarier (blue colors)
-                const phaseColors = ['#00c', '#00d', '#00f'];
-                ctx.fillStyle = phaseColors[this.phase - 1];
-                ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
-
-                ctx.fillStyle = '#44f';
-                ctx.fillRect(-this.size/3, -this.size/3, this.size/1.5, this.size/1.5);
-
-                // Chef's uniform - white apron
+                ctx.fillRect(-s/4, -s/2 - 5, s/2, 10);
+                // Body
+                ctx.fillStyle = c.body;
+                ctx.fillRect(-s/2, -s/2, s, s);
+                ctx.fillStyle = c.accent;
+                ctx.fillRect(-s/3, -s/3, s/1.5, s/1.5);
+                // White apron
                 ctx.fillStyle = '#fff';
-                ctx.fillRect(-this.size/2.5, 0, this.size/1.25, this.size/2);
-
-                // Angry eyes
+                ctx.fillRect(-s/2.5, 0, s/1.25, s/2);
+                // Eyes
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
-                ctx.arc(-this.size/4, -this.size/6, this.size/6, 0, Math.PI * 2);
-                ctx.arc(this.size/4, -this.size/6, this.size/6, 0, Math.PI * 2);
+                ctx.arc(-s/4, -s/6, s/6, 0, Math.PI * 2);
+                ctx.arc(s/4, -s/6, s/6, 0, Math.PI * 2);
                 ctx.fill();
-
-                // Pupils - glowing red
                 ctx.fillStyle = '#ff0';
                 ctx.beginPath();
-                ctx.arc(-this.size/4, -this.size/6, this.size/12, 0, Math.PI * 2);
-                ctx.arc(this.size/4, -this.size/6, this.size/12, 0, Math.PI * 2);
+                ctx.arc(-s/4, -s/6, s/12, 0, Math.PI * 2);
+                ctx.arc(s/4, -s/6, s/12, 0, Math.PI * 2);
                 ctx.fill();
-
-                // Evil grin
+                // Grin + teeth
                 ctx.strokeStyle = '#000';
                 ctx.lineWidth = 4;
                 ctx.beginPath();
-                ctx.arc(0, this.size/6, this.size/3, 0, Math.PI);
+                ctx.arc(0, s/6, s/3, 0, Math.PI);
                 ctx.stroke();
-
-                // Sharp teeth
                 ctx.fillStyle = '#fff';
                 for (let i = 0; i < 6; i++) {
-                    const tx = -this.size/3 + i * this.size/7.5;
+                    const tx = -s/3 + i * s/7.5;
                     ctx.beginPath();
-                    ctx.moveTo(tx, this.size/6);
-                    ctx.lineTo(tx + 5, this.size/6 + 10);
-                    ctx.lineTo(tx + 10, this.size/6);
+                    ctx.moveTo(tx, s/6);
+                    ctx.lineTo(tx + 5, s/6 + 10);
+                    ctx.lineTo(tx + 10, s/6);
                     ctx.fill();
                 }
-
-                // Giant cleaver in hand
+                // Cleaver
                 ctx.fillStyle = '#333';
-                const cleaverX = this.size/2 + 20;
-                const cleaverY = 0;
-                ctx.fillRect(cleaverX - 3, cleaverY, 6, 30);
+                const cleaverX = s/2 + 20;
+                ctx.fillRect(cleaverX - 3, 0, 6, 30);
                 ctx.fillStyle = '#999';
                 ctx.beginPath();
-                ctx.rect(cleaverX - 20, cleaverY - 35, 40, 35);
+                ctx.rect(cleaverX - 20, -35, 40, 35);
                 ctx.fill();
                 ctx.fillStyle = '#ddd';
-                ctx.fillRect(cleaverX - 15, cleaverY - 30, 5, 25);
+                ctx.fillRect(cleaverX - 15, -30, 5, 25);
+            }
 
-                // Health bar
+            drawInferno(ctx) {
+                const s = this.size, c = this.config, half = s/2;
+                const flick = Math.sin(this.angle * 6) * 3;
+                // Flame spikes
+                ctx.fillStyle = c.accent;
+                for (let i = 0; i < 10; i++) {
+                    const a = i * (Math.PI * 2 / 10);
+                    ctx.beginPath();
+                    ctx.moveTo(Math.cos(a - 0.2) * half * 0.9, Math.sin(a - 0.2) * half * 0.9);
+                    ctx.lineTo(Math.cos(a) * (half + 18 + flick), Math.sin(a) * (half + 18 + flick));
+                    ctx.lineTo(Math.cos(a + 0.2) * half * 0.9, Math.sin(a + 0.2) * half * 0.9);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                // Core body
+                ctx.fillStyle = c.body;
+                ctx.beginPath();
+                ctx.arc(0, 0, half * 0.9, 0, Math.PI * 2);
+                ctx.fill();
+                // Horns
+                ctx.fillStyle = c.trim;
+                ctx.beginPath();
+                ctx.moveTo(-half*0.5, -half*0.7); ctx.lineTo(-half*0.75, -half*1.25); ctx.lineTo(-half*0.2, -half*0.75); ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(half*0.5, -half*0.7); ctx.lineTo(half*0.75, -half*1.25); ctx.lineTo(half*0.2, -half*0.75); ctx.fill();
+                // Eyes
+                ctx.fillStyle = c.trim;
+                ctx.beginPath();
+                ctx.arc(-s/5, -s/10, s/9, 0, Math.PI * 2);
+                ctx.arc(s/5, -s/10, s/9, 0, Math.PI * 2);
+                ctx.fill();
                 ctx.fillStyle = '#000';
-                ctx.fillRect(-this.size/2, -this.size/2 - 30, this.size, 8);
-                const healthPercent = this.health / this.maxHealth;
-                const healthColor = healthPercent > 0.5 ? '#0f0' : (healthPercent > 0.25 ? '#ff0' : '#f00');
-                ctx.fillStyle = healthColor;
-                ctx.fillRect(-this.size/2 + 2, -this.size/2 - 28, (this.size - 4) * healthPercent, 4);
+                ctx.beginPath();
+                ctx.arc(-s/5, -s/10, s/22, 0, Math.PI * 2);
+                ctx.arc(s/5, -s/10, s/22, 0, Math.PI * 2);
+                ctx.fill();
+                // Jagged mouth
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.moveTo(-s/4, s/6);
+                for (let i = 0; i <= 6; i++) {
+                    const xx = -s/4 + i * (s/2) / 6;
+                    ctx.lineTo(xx, s/6 + (i % 2 ? 12 : 0));
+                }
+                ctx.closePath();
+                ctx.fill();
+            }
 
+            drawFrost(ctx) {
+                const s = this.size, c = this.config, half = s/2;
+                // Crystalline body
+                ctx.fillStyle = c.body;
+                ctx.beginPath();
+                ctx.moveTo(-half, half);
+                ctx.lineTo(-half, -half * 0.5);
+                ctx.lineTo(0, -half);
+                ctx.lineTo(half, -half * 0.5);
+                ctx.lineTo(half, half);
+                ctx.closePath();
+                ctx.fill();
+                // Ice shards
+                ctx.fillStyle = c.trim;
+                ctx.beginPath();
+                ctx.moveTo(-half, -half*0.5); ctx.lineTo(-half - 14, -half*1.3); ctx.lineTo(-half + 10, -half*0.7); ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(half, -half*0.5); ctx.lineTo(half + 14, -half*1.3); ctx.lineTo(half - 10, -half*0.7); ctx.fill();
+                // Face plate
+                ctx.fillStyle = c.accent;
+                ctx.globalAlpha = 0.6;
+                ctx.fillRect(-half*0.6, -half*0.4, half*1.2, half*0.9);
+                ctx.globalAlpha = 1;
+                // Eyes
+                ctx.fillStyle = '#0af';
+                ctx.fillRect(-s/4, -s/8, s/8, s/12);
+                ctx.fillRect(s/8, -s/8, s/8, s/12);
+                // Cracks
+                ctx.strokeStyle = c.trim;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, -half*0.3); ctx.lineTo(6, 0); ctx.lineTo(-4, half*0.3); ctx.stroke();
+            }
+
+            drawSwarm(ctx) {
+                const s = this.size, c = this.config, half = s/2;
+                const flap = Math.sin(this.angle * 8) * 0.3;
+                // Wings
+                ctx.fillStyle = c.accent;
+                ctx.globalAlpha = 0.5;
+                ctx.save(); ctx.rotate(-0.5 + flap);
+                ctx.beginPath(); ctx.ellipse(-half*0.8, 0, half*0.9, half*1.4, 0, 0, Math.PI * 2); ctx.fill();
                 ctx.restore();
+                ctx.save(); ctx.rotate(0.5 - flap);
+                ctx.beginPath(); ctx.ellipse(half*0.8, 0, half*0.9, half*1.4, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+                ctx.globalAlpha = 1;
+                // Body + head
+                ctx.fillStyle = c.body;
+                ctx.beginPath(); ctx.ellipse(0, 0, half*0.7, half, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = c.trim;
+                ctx.beginPath(); ctx.arc(0, -half*0.4, half*0.5, 0, Math.PI * 2); ctx.fill();
+                // Crown
+                ctx.fillStyle = '#ffd700';
+                ctx.beginPath();
+                ctx.moveTo(-half*0.4, -half*0.7); ctx.lineTo(-half*0.4, -half*1.1); ctx.lineTo(-half*0.13, -half*0.85);
+                ctx.lineTo(0, -half*1.2); ctx.lineTo(half*0.13, -half*0.85); ctx.lineTo(half*0.4, -half*1.1); ctx.lineTo(half*0.4, -half*0.7);
+                ctx.closePath(); ctx.fill();
+                // Cluster of eyes
+                ctx.fillStyle = '#000';
+                [[-0.25, -0.45], [0.05, -0.5], [-0.05, -0.3], [0.25, -0.4]].forEach(([ex, ey]) => {
+                    ctx.beginPath(); ctx.arc(ex * s, ey * s, s/22, 0, Math.PI * 2); ctx.fill();
+                });
+            }
+
+            drawVolt(ctx) {
+                const s = this.size, c = this.config, half = s/2;
+                // Diamond body
+                ctx.fillStyle = c.body;
+                ctx.beginPath();
+                ctx.moveTo(0, -half); ctx.lineTo(half, 0); ctx.lineTo(0, half); ctx.lineTo(-half, 0); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = c.accent;
+                ctx.beginPath();
+                ctx.moveTo(0, -half*0.6); ctx.lineTo(half*0.6, 0); ctx.lineTo(0, half*0.6); ctx.lineTo(-half*0.6, 0); ctx.closePath(); ctx.fill();
+                // Lightning bolt
+                ctx.strokeStyle = c.trim;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(-half*0.3, -half*0.5); ctx.lineTo(half*0.1, -half*0.1); ctx.lineTo(-half*0.1, 0); ctx.lineTo(half*0.3, half*0.5);
+                ctx.stroke();
+                // Sparks
+                if (Math.sin(this.angle * 10) > 0) {
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    for (let i = 0; i < 4; i++) {
+                        const a = this.angle * 3 + i * Math.PI / 2;
+                        ctx.beginPath();
+                        ctx.moveTo(Math.cos(a) * half, Math.sin(a) * half);
+                        ctx.lineTo(Math.cos(a) * (half + 12), Math.sin(a) * (half + 12));
+                        ctx.stroke();
+                    }
+                }
+                // Eyes
+                ctx.fillStyle = c.trim;
+                ctx.beginPath();
+                ctx.arc(-s/8, -s/16, s/16, 0, Math.PI * 2);
+                ctx.arc(s/8, -s/16, s/16, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            drawShadow(ctx) {
+                const s = this.size, c = this.config, half = s/2;
+                // Aura
+                ctx.fillStyle = c.accent;
+                ctx.globalAlpha = 0.25;
+                ctx.beginPath(); ctx.arc(0, 0, half*1.2, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 0.9;
+                // Ghost body with wavy bottom
+                ctx.fillStyle = c.body;
+                ctx.beginPath();
+                ctx.arc(0, -half*0.2, half*0.9, Math.PI, 0);
+                const waves = 4;
+                for (let i = 0; i <= waves; i++) {
+                    const xx = half*0.9 - i * (half*1.8 / waves);
+                    const yy = half + (i % 2 ? -10 : 0);
+                    ctx.lineTo(xx, yy);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                // Glowing eyes
+                ctx.fillStyle = c.trim;
+                ctx.beginPath();
+                ctx.arc(-s/5, -s/6, s/10, 0, Math.PI * 2);
+                ctx.arc(s/5, -s/6, s/10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(-s/5, -s/6, s/26, 0, Math.PI * 2);
+                ctx.arc(s/5, -s/6, s/26, 0, Math.PI * 2);
+                ctx.fill();
+                // Mouth
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.ellipse(0, s/12, s/10, s/8, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            drawMega(ctx) {
+                const s = this.size, c = this.config, half = s/2;
+                // Neon aura ring (rotates through hues)
+                const hue = (this.angle * 60) % 360;
+                ctx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
+                ctx.lineWidth = 6;
+                ctx.beginPath(); ctx.arc(0, 0, half + 10, 0, Math.PI * 2); ctx.stroke();
+                // Body
+                ctx.fillStyle = c.body;
+                ctx.beginPath(); ctx.arc(0, 0, half, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = c.accent;
+                ctx.beginPath(); ctx.arc(0, 0, half*0.55, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = c.trim;
+                ctx.beginPath(); ctx.arc(0, 0, half*0.28, 0, Math.PI * 2); ctx.fill();
+                // Crown
+                ctx.fillStyle = '#ffd700';
+                ctx.beginPath();
+                ctx.moveTo(-half*0.7, -half*0.75); ctx.lineTo(-half*0.7, -half*1.25); ctx.lineTo(-half*0.3, -half*0.95);
+                ctx.lineTo(0, -half*1.4); ctx.lineTo(half*0.3, -half*0.95); ctx.lineTo(half*0.7, -half*1.25); ctx.lineTo(half*0.7, -half*0.75);
+                ctx.closePath(); ctx.fill();
+                // Three eyes
+                ctx.fillStyle = '#fff';
+                [[-0.28, -0.05], [0.28, -0.05], [0, 0.18]].forEach(([ex, ey]) => {
+                    ctx.beginPath(); ctx.arc(ex * s, ey * s, s/12, 0, Math.PI * 2); ctx.fill();
+                });
+                ctx.fillStyle = '#000';
+                [[-0.28, -0.05], [0.28, -0.05], [0, 0.18]].forEach(([ex, ey]) => {
+                    ctx.beginPath(); ctx.arc(ex * s, ey * s, s/26, 0, Math.PI * 2); ctx.fill();
+                });
             }
 
             takeDamage(amount) {
@@ -2458,6 +2801,9 @@
             });
 
             level = generateLevel(currentLevel);
+            if (boss) {
+                document.getElementById('bossWarning').textContent = '⚠️ ' + boss.config.name + ' ⚠️';
+            }
             particles = [];
             projectiles = [];
             bossProjectiles = [];
@@ -2717,9 +3063,10 @@
             if (boss) {
                 boss.update(dt, level.platforms, players);
 
-                const bossProj = boss.shoot();
-                if (bossProj) {
-                    bossProjectiles.push(bossProj);
+                const bossShots = boss.shoot();
+                if (bossShots) {
+                    const shots = Array.isArray(bossShots) ? bossShots : [bossShots];
+                    shots.forEach(s => bossProjectiles.push(s));
                     playSound('shoot');
                 }
 
@@ -2742,14 +3089,15 @@
             });
             projectiles = projectiles.filter(p => p.x < level.width && p.x > 0);
 
-            // Update boss projectiles
+            // Update boss projectiles (support aimed/diagonal shots via vy)
             bossProjectiles.forEach(p => {
                 p.x += p.vx * dt * 60;
+                if (p.vy !== undefined) p.y += p.vy * dt * 60;
                 if (Math.random() < 0.5) {
-                    particles.push(new Particle(p.x, p.y, '#f00', p.vx * -0.1, (Math.random() - 0.5) * 2));
+                    particles.push(new Particle(p.x, p.y, p.color || '#f00', p.vx * -0.1, (Math.random() - 0.5) * 2));
                 }
             });
-            bossProjectiles = bossProjectiles.filter(p => p.x < level.width && p.x > 0);
+            bossProjectiles = bossProjectiles.filter(p => p.x < level.width && p.x > 0 && p.y > -100 && p.y < HEIGHT + 100);
 
             // Update enemy projectiles
             enemyProjectiles.forEach(p => {
@@ -3348,33 +3696,37 @@
                 ctx.fill();
             });
 
-            // Draw boss projectiles with red glow
+            // Draw boss projectiles with a glow tinted to the boss's color
             bossProjectiles.forEach(p => {
                 const screenX = p.x - cameraX;
+                const color = p.color || '#ff3300';
 
+                ctx.save();
                 // Outer glow
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.4)';
+                ctx.globalAlpha = 0.35;
+                ctx.fillStyle = color;
                 ctx.beginPath();
                 ctx.arc(screenX, p.y, p.size * 2, 0, Math.PI * 2);
                 ctx.fill();
 
                 // Middle glow
-                ctx.fillStyle = 'rgba(255, 100, 0, 0.7)';
+                ctx.globalAlpha = 0.7;
                 ctx.beginPath();
                 ctx.arc(screenX, p.y, p.size * 1.3, 0, Math.PI * 2);
                 ctx.fill();
 
                 // Core
-                ctx.fillStyle = '#f00';
+                ctx.globalAlpha = 1;
                 ctx.beginPath();
                 ctx.arc(screenX, p.y, p.size, 0, Math.PI * 2);
                 ctx.fill();
 
                 // Bright center
-                ctx.fillStyle = '#ff0';
+                ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.arc(screenX, p.y, p.size * 0.4, 0, Math.PI * 2);
                 ctx.fill();
+                ctx.restore();
             });
 
             // Draw enemy projectiles with cyan glow
