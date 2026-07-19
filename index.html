@@ -741,81 +741,93 @@
             musicOscillators = [];
         }
 
+        // A single enveloped oscillator voice (attack + exponential decay), optionally
+        // pitch-swept and filtered. Building block for layered, natural-sounding SFX.
+        function playTone({ type = 'sine', freq, freqEnd = null, dur = 0.15, gain = 0.1, when = 0, attack = 0.005, filterType = null, filterFreq = 1000 }) {
+            if (!audioContext) return;
+            const t0 = audioContext.currentTime + when;
+            const osc = audioContext.createOscillator();
+            const g = audioContext.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, t0);
+            if (freqEnd) osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + dur);
+            g.gain.setValueAtTime(0.0001, t0);
+            g.gain.exponentialRampToValueAtTime(gain, t0 + attack);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+            if (filterType) {
+                const f = audioContext.createBiquadFilter();
+                f.type = filterType;
+                f.frequency.value = filterFreq;
+                osc.connect(f); f.connect(g);
+            } else {
+                osc.connect(g);
+            }
+            g.connect(audioContext.destination);
+            osc.start(t0);
+            osc.stop(t0 + dur + 0.03);
+        }
+
+        // A filtered noise burst - the percussive part of thuds, hits, and impacts.
+        function playNoise({ dur = 0.15, gain = 0.15, filterType = 'lowpass', filterFreq = 800, when = 0, decay = 5 }) {
+            if (!audioContext) return;
+            const t0 = audioContext.currentTime + when;
+            const bufferSize = Math.max(1, Math.floor(audioContext.sampleRate * dur));
+            const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.exp(-i / bufferSize * decay);
+            }
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            const filter = audioContext.createBiquadFilter();
+            filter.type = filterType;
+            filter.frequency.value = filterFreq;
+            const g = audioContext.createGain();
+            g.gain.value = gain;
+            source.connect(filter); filter.connect(g); g.connect(audioContext.destination);
+            source.start(t0);
+        }
+
         function playSound(type) {
             if (!audioContext) return;
 
-            if (type === 'collect') {
-                const notes = [440, 554, 659];
-                notes.forEach((freq, i) => {
-                    const osc = audioContext.createOscillator();
-                    const gain = audioContext.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.value = freq;
-                    gain.gain.value = 0.1;
-                    gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
-                    osc.connect(gain);
-                    gain.connect(audioContext.destination);
-                    osc.start(audioContext.currentTime + i * 0.05);
-                    osc.stop(audioContext.currentTime + 0.2 + i * 0.05);
-                });
-            } else if (type === 'hit') {
-                const bufferSize = audioContext.sampleRate * 0.15;
-                const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / bufferSize * 5);
-                }
-                const source = audioContext.createBufferSource();
-                const filter = audioContext.createBiquadFilter();
-                const gain = audioContext.createGain();
-                filter.type = 'lowpass';
-                filter.frequency.value = 800;
-                gain.gain.value = 0.15;
-                source.buffer = buffer;
-                source.connect(filter);
-                filter.connect(gain);
-                gain.connect(audioContext.destination);
-                source.start();
-            } else if (type === 'shoot') {
-                const osc = audioContext.createOscillator();
-                const gain = audioContext.createGain();
-                osc.type = 'square';
-                osc.frequency.value = 800;
-                osc.frequency.exponentialRampToValueAtTime(200, audioContext.currentTime + 0.1);
-                gain.gain.value = 0.05;
-                gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-                osc.connect(gain);
-                gain.connect(audioContext.destination);
-                osc.start();
-                osc.stop(audioContext.currentTime + 0.1);
-            } else if (type === 'glitch') {
-                for (let i = 0; i < 5; i++) {
-                    setTimeout(() => {
-                        const osc = audioContext.createOscillator();
-                        const gain = audioContext.createGain();
-                        osc.type = 'sawtooth';
-                        osc.frequency.value = 100 + Math.random() * 500;
-                        gain.gain.value = 0.15;
-                        gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-                        osc.connect(gain);
-                        gain.connect(audioContext.destination);
-                        osc.start();
-                        osc.stop(audioContext.currentTime + 0.3);
-                    }, i * 100);
-                }
-            } else if (type === 'powerup') {
-                [200, 300, 400, 600, 800].forEach((freq, i) => {
-                    const osc = audioContext.createOscillator();
-                    const gain = audioContext.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.value = freq;
-                    gain.gain.value = 0.08;
-                    gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-                    osc.connect(gain);
-                    gain.connect(audioContext.destination);
-                    osc.start(audioContext.currentTime + i * 0.05);
-                    osc.stop(audioContext.currentTime + 0.3 + i * 0.05);
-                });
+            switch (type) {
+                case 'jump':
+                    // Quick upward swoop with a soft airy overtone
+                    playTone({ type: 'triangle', freq: 300, freqEnd: 560, dur: 0.14, gain: 0.08 });
+                    playTone({ type: 'sine', freq: 620, freqEnd: 900, dur: 0.10, gain: 0.035, when: 0.005 });
+                    break;
+                case 'land':
+                    // Muffled thud: low sine drop + short low-passed noise
+                    playTone({ type: 'sine', freq: 150, freqEnd: 55, dur: 0.14, gain: 0.11 });
+                    playNoise({ dur: 0.10, gain: 0.10, filterFreq: 450, decay: 9 });
+                    break;
+                case 'collect':
+                    // Bright two-note "coin" ding
+                    playTone({ type: 'triangle', freq: 880, dur: 0.10, gain: 0.09, attack: 0.003 });
+                    playTone({ type: 'triangle', freq: 1320, dur: 0.16, gain: 0.08, when: 0.07, attack: 0.003 });
+                    break;
+                case 'hit':
+                    // Weighty impact: noise crack + low body
+                    playNoise({ dur: 0.18, gain: 0.16, filterFreq: 900, decay: 5 });
+                    playTone({ type: 'sine', freq: 190, freqEnd: 50, dur: 0.18, gain: 0.13 });
+                    break;
+                case 'shoot':
+                    // Soft "pew" with a tiny transient click
+                    playTone({ type: 'triangle', freq: 720, freqEnd: 180, dur: 0.12, gain: 0.06, filterType: 'lowpass', filterFreq: 1400 });
+                    playNoise({ dur: 0.04, gain: 0.03, filterType: 'highpass', filterFreq: 2200, decay: 6 });
+                    break;
+                case 'glitch':
+                    for (let i = 0; i < 5; i++) {
+                        playTone({ type: 'sawtooth', freq: 100 + Math.random() * 500, dur: 0.3, gain: 0.12, when: i * 0.1 });
+                    }
+                    break;
+                case 'powerup':
+                    // Rising sparkle arpeggio
+                    [523, 659, 784, 1047].forEach((f, i) => {
+                        playTone({ type: 'triangle', freq: f, dur: 0.3, gain: 0.07, when: i * 0.06 });
+                    });
+                    break;
             }
         }
 
@@ -1202,6 +1214,8 @@
                 this.shootCooldown = 0;
                 this.facingDirection = 1;
                 this.muzzleFlash = 0;
+                this.coyoteTimer = 0;   // brief window to still jump after leaving a ledge
+                this.jumpHeld = false;  // true while a jump button is held (for variable height)
 
                 // Per-player state
                 this.health = 3;
@@ -1229,22 +1243,56 @@
                 }
             }
 
+            // Attempt a jump. A ground/coyote jump keeps double-jumps; otherwise
+            // spends a double-jump. Returns true if the jump happened.
+            tryJump() {
+                if (this.dead || this.fallingIntoGoal) return false;
+                if (this.onGround || this.coyoteTimer > 0) {
+                    this.vy = JUMP_STRENGTH;
+                    this.coyoteTimer = 0;
+                    this.jumpHeld = true;
+                    playSound('jump');
+                    return true;
+                }
+                if (this.hasDoubleJump > 0) {
+                    this.vy = JUMP_STRENGTH;
+                    this.hasDoubleJump--;
+                    this.jumpHeld = true;
+                    playSound('jump');
+                    return true;
+                }
+                return false;
+            }
+
+            // Releasing the jump button early cuts the ascent short (variable jump height).
+            jumpCut() {
+                this.jumpHeld = false;
+                if (this.vy < 0) this.vy *= 0.45;
+            }
+
             update(dt, platforms) {
                 if (this.dead) return;
+                const wasOnGround = this.onGround;
 
-                // Apply velocity
+                // Apply horizontal velocity
                 this.x += this.vx * dt * 60;
 
-                // Apply gravity (reduced or disabled with zero gravity powerup)
-                if (this.powerups.zeroGravity > 0) {
-                    this.vy += GRAVITY * 0.2;
-                } else {
-                    this.vy += GRAVITY;
-                }
+                // Weighty gravity: rise at normal g, fall faster for a snappier arc.
+                // Zero-gravity powerup lightens everything.
+                const lowG = this.powerups.zeroGravity > 0;
+                let g = lowG ? GRAVITY * 0.2 : GRAVITY;
+                if (this.vy > 0) g *= 1.4;
+                this.vy += g;
+
+                // Terminal velocity keeps falls natural and avoids tunneling
+                const maxFall = lowG ? 8 : 18;
+                if (this.vy > maxFall) this.vy = maxFall;
+
+                const impactVy = this.vy; // fall speed before collision zeroes it
                 this.y += this.vy * dt * 60;
 
-                // Friction
-                this.vx *= 0.85;
+                // Friction: firm on the ground, light in the air so momentum carries
+                this.vx *= wasOnGround ? 0.85 : 0.93;
 
                 // Platform collision - align bottom of body with platform
                 // Skip collision when falling into goal to let player fall through
@@ -1262,6 +1310,18 @@
                             this.hasDoubleJump = this.powerups.doubleJump;
                         }
                     });
+                }
+
+                // Coyote time: refresh on the ground, count down once airborne
+                if (this.onGround) {
+                    this.coyoteTimer = 0.1;
+                } else if (this.coyoteTimer > 0) {
+                    this.coyoteTimer -= dt;
+                }
+
+                // Landing thud when touching down with real speed
+                if (this.onGround && !wasOnGround && impactVy > 5) {
+                    playSound('land');
                 }
 
                 // Bob animation
@@ -1435,17 +1495,34 @@
                 ctx.ellipse(0, shadowOffset, this.size * 0.8 * shadowScale, this.size * 0.3 * shadowScale, 0, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Body (with idle breathing scale)
+                // Body (with idle breathing scale) - slimmer width for a more bean-like shape
                 const bodyScale = 1 + idleBreath;
-                const bodyWidth = this.size * bodyScale;
+                const bodyWidth = this.size * bodyScale * 0.6;
                 const bodyHeight = this.size * 1.5 * bodyScale;
+                const topY = -this.size/2 + bob;
 
+                // Base color
                 ctx.fillStyle = this.bodyColor;
-                ctx.fillRect(-bodyWidth/2, -this.size/2 + bob, bodyWidth, bodyHeight);
+                ctx.fillRect(-bodyWidth/2, topY, bodyWidth, bodyHeight);
 
-                // Highlight
+                // Vertical lighting: bright top, shaded bottom (reads as a rounded, lit surface)
+                const lightGrad = ctx.createLinearGradient(0, topY, 0, topY + bodyHeight);
+                lightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+                lightGrad.addColorStop(0.3, 'rgba(255, 255, 255, 0)');
+                lightGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
+                lightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.38)');
+                ctx.fillStyle = lightGrad;
+                ctx.fillRect(-bodyWidth/2, topY, bodyWidth, bodyHeight);
+
+                // Colored face band
                 ctx.fillStyle = this.highlightColor;
-                ctx.fillRect(-bodyWidth/2, -this.size/2 + bob, bodyWidth, this.size * 0.3);
+                ctx.fillRect(-bodyWidth/2, topY, bodyWidth, this.size * 0.3);
+
+                // Glossy specular highlight near the top-left
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+                ctx.beginPath();
+                ctx.ellipse(-bodyWidth * 0.16, topY + this.size * 0.15, bodyWidth * 0.26, this.size * 0.15, 0, 0, Math.PI * 2);
+                ctx.fill();
 
                 if (this.dead) {
                     // X eyes for dead player
@@ -1680,6 +1757,14 @@
 
                 ctx.save();
                 ctx.translate(screenX, this.y);
+
+                // Soft ground shadow (skip floating flyers and static targets)
+                if (!this.isTarget && this.enemyType !== 'flyer') {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+                    ctx.beginPath();
+                    ctx.ellipse(0, this.size/2, this.size * 0.45, this.size * 0.16, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 // Target appearance (bullseye)
                 if (this.isTarget) {
@@ -2636,21 +2721,17 @@
                 }
             }
 
-            // Player 1: W to jump, X to shoot
+            // Player 1: W to jump, X to shoot (jump is edge-triggered, ignoring key auto-repeat)
             if (p1 && !p1.dead && !p1.fallingIntoGoal) {
                 if (e.key.toLowerCase() === 'x') {
                     const proj = p1.shoot();
                     if (proj) projectiles.push(proj);
-                } else if (e.key.toLowerCase() === 'w' &&
-                          (p1.onGround || p1.hasDoubleJump > 0)) {
-                    p1.vy = JUMP_STRENGTH;
-                    if (!p1.onGround) p1.hasDoubleJump--;
+                } else if (e.key.toLowerCase() === 'w' && !e.repeat) {
+                    p1.tryJump();
                 }
                 // In 1-player mode, ArrowUp also jumps P1
-                if (!p2Active && e.key === 'ArrowUp' &&
-                    (p1.onGround || p1.hasDoubleJump > 0)) {
-                    p1.vy = JUMP_STRENGTH;
-                    if (!p1.onGround) p1.hasDoubleJump--;
+                if (!p2Active && e.key === 'ArrowUp' && !e.repeat) {
+                    p1.tryJump();
                 }
             }
 
@@ -2662,10 +2743,8 @@
                         const proj = p2.shoot();
                         if (proj) projectiles.push(proj);
                         e.preventDefault();
-                    } else if (e.key === 'ArrowUp' &&
-                              (p2.onGround || p2.hasDoubleJump > 0)) {
-                        p2.vy = JUMP_STRENGTH;
-                        if (!p2.onGround) p2.hasDoubleJump--;
+                    } else if (e.key === 'ArrowUp' && !e.repeat) {
+                        p2.tryJump();
                     }
                 }
             }
@@ -2689,6 +2768,20 @@
 
         document.addEventListener('keyup', (e) => {
             keys[e.key.toLowerCase()] = false;
+
+            // Variable jump height: releasing the jump button cuts the ascent short
+            if (gameState === 'PLAYING') {
+                const p2Active = players.length > 1;
+                if (e.key === 'w' || e.key === 'W') {
+                    if (players[0]) players[0].jumpCut();
+                } else if (e.key === 'ArrowUp') {
+                    if (p2Active) {
+                        if (players[1]) players[1].jumpCut();
+                    } else if (players[0]) {
+                        players[0].jumpCut();
+                    }
+                }
+            }
         });
 
         document.addEventListener('click', () => {
@@ -2780,6 +2873,8 @@
                 p.size = PLAYER_SIZE;
                 p.onGround = false;
                 p.hasDoubleJump = savedDoubleJump;
+                p.coyoteTimer = 0;
+                p.jumpHeld = false;
                 p.bobPhase = 0;
                 p.facingDirection = 1;
                 p.shootCooldown = 0;
@@ -3450,9 +3545,11 @@
             particles.forEach(p => p.update(dt));
             particles = particles.filter(p => !p.isDead());
 
-            // Death by falling per player
+            // Death by falling per player.
+            // Skip players entering/at the goal: they intentionally drop through the
+            // can (collision disabled) and would otherwise be counted as fallen off-screen.
             players.forEach(p => {
-                if (p.dead) return;
+                if (p.dead || p.fallingIntoGoal || p.reachedGoal) return;
                 if (p.y > HEIGHT + 100) {
                     p.health = 0;
                     p.dead = true;
@@ -3471,10 +3568,25 @@
 
             ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
-            // Draw platforms
-            ctx.fillStyle = '#654321';
+            // Draw platforms with lit, extruded shading (top face + highlight + shaded underside)
             level.platforms.forEach(p => {
-                ctx.fillRect(p.x - cameraX, p.y, p.width, p.height);
+                const sx = p.x - cameraX;
+                if (sx > WIDTH || sx + p.width < 0) return; // off-screen cull
+
+                const grad = ctx.createLinearGradient(0, p.y, 0, p.y + p.height);
+                grad.addColorStop(0, '#8a6a3f');   // lit top
+                grad.addColorStop(0.5, '#6b4a25');  // mid
+                grad.addColorStop(1, '#4a3218');    // shaded bottom
+                ctx.fillStyle = grad;
+                ctx.fillRect(sx, p.y, p.width, p.height);
+
+                // Bright top edge (light catching the surface)
+                ctx.fillStyle = 'rgba(255, 231, 186, 0.55)';
+                ctx.fillRect(sx, p.y, p.width, 3);
+
+                // Dark underside line for depth
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+                ctx.fillRect(sx, p.y + p.height - 2, p.width, 2);
             });
 
             // Draw collectibles
@@ -3781,6 +3893,13 @@
 
             // Draw particles
             particles.forEach(p => p.draw(ctx, cameraX));
+
+            // Subtle vignette for depth (darkens edges, keeps the action lit in the center)
+            const vignette = ctx.createRadialGradient(WIDTH/2, HEIGHT/2, HEIGHT * 0.35, WIDTH/2, HEIGHT/2, HEIGHT * 0.85);
+            vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+            vignette.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
+            ctx.fillStyle = vignette;
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
             ctx.restore();
         }
