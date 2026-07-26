@@ -277,6 +277,7 @@
         <div id="ui">
             <div>Level: <span id="level">1</span>/100</div>
             <div>Score: <span id="score">0</span></div>
+            <div>🪙 Coins: <span id="coins">0</span></div>
             <div class="player-label p1">P1</div>
             <div class="hearts" id="hearts1">❤️❤️❤️</div>
             <div class="player-powerups" id="powerups1"></div>
@@ -293,12 +294,16 @@
             <p>A Side-Scrolling Adventure</p>
             <p style="margin-top: 20px;">🎮 WASD or Arrow Keys - Move & Jump</p>
             <p>🔫 X Key - Shoot enemies</p>
+            <p>🧎 C or Down - Crouch · 💾 S - Save progress</p>
+            <p>🪙 Earn coins from coins & kills · 🛒 Z - Shop for ally minions</p>
+            <p>💬 T - Talk (type a message, Enter to say it)</p>
             <p style="margin-top: 10px;">🎯 Goal: Reach the end of each level!</p>
             <p style="margin-top: 10px; font-size: 16px;">Collect power-ups: ⚡Speed 🦘Double Jump 🛡️Shield 🔥Rapid Fire</p>
             <p class="warning">⚠️ DON'T PRESS SPACEBAR ⚠️</p>
             <p style="margin-top: 20px; font-size: 14px; color: #8b5fcf; opacity: 0.8;">Press 2 or Enter during gameplay for Player 2 drop-in!</p>
             <p style="font-size: 14px; color: #8b5fcf; opacity: 0.8;">Player 2: Arrow Keys - Move &amp; Jump · P - Shoot</p>
             <p style="margin-top: 15px; font-size: 16px; opacity: 0.7;">High Score: <span id="highScore">0</span></p>
+            <button class="button" id="continueButton" onclick="continueGame()" style="display:none;">CONTINUE</button>
             <button class="button" onclick="startGame()">START GAME</button>
             <button class="button" onclick="openEditor()">MAKE YOUR OWN LEVEL</button>
             <p style="margin-top: 20px; font-size: 14px; opacity: 0.6;">Written by Zeko Benson<br>Copyright © 2026</p>
@@ -349,6 +354,7 @@
                     <option value="bigBoy">💪 Big Boy</option>
                     <option value="enemySleep">💤 Enemy Sleep</option>
                     <option value="invincibility">✨ Invincibility</option>
+                    <option value="magnet">🧲 Magnet</option>
                 </select>
                 <button class="ed-tool" data-tool="health">❤️ Health</button>
                 <button class="ed-tool" data-tool="start">🟢 Start</button>
@@ -440,6 +446,264 @@
         const PLATFORM_HEIGHT = 20;
         const PLATFORM_Y_INCREMENT = 50;
 
+        // Cosmetic clothing, organized into slots the bean can mix and match. Each item
+        // unlocks at a score threshold and is drawn from a shared geometry object `g`:
+        //   g.topY       - top edge of the body (local coords, y grows downward)
+        //   g.bodyWidth  - body width      g.bodyHeight - body height
+        //   g.size       - player size     g.eyeY - vertical center of the eyes
+        // The "None" item (threshold 0, draw null) is always first in each slot.
+        const CLOTHING = {
+            hat: {
+                label: 'Hat',
+                items: [
+                    { name: 'None', threshold: 0, draw: null },
+                    {
+                        name: 'Beanie', threshold: 500,
+                        draw: (ctx, g) => {
+                            const base = g.topY, bw = g.bodyWidth, r = bw * 0.62;
+                            ctx.fillStyle = '#2f9e94';
+                            ctx.beginPath();
+                            ctx.arc(0, base, r, Math.PI, Math.PI * 2);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillStyle = '#1f6f68';
+                            ctx.fillRect(-r, base - 3, r * 2, 6);
+                            ctx.fillStyle = '#f5f5f5';
+                            ctx.beginPath();
+                            ctx.arc(0, base - r, 4, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    },
+                    {
+                        name: 'Party Hat', threshold: 1500,
+                        draw: (ctx, g) => {
+                            const base = g.topY, bw = g.bodyWidth, h = g.size * 0.95;
+                            ctx.fillStyle = '#e84393';
+                            ctx.beginPath();
+                            ctx.moveTo(-bw * 0.5, base);
+                            ctx.lineTo(bw * 0.5, base);
+                            ctx.lineTo(0, base - h);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.strokeStyle = '#fdcb6e';
+                            ctx.lineWidth = 2;
+                            for (let i = 1; i <= 3; i++) {
+                                const t = i / 4;
+                                ctx.beginPath();
+                                ctx.moveTo(-bw * 0.5 * (1 - t), base - h * t);
+                                ctx.lineTo(bw * 0.5 * (1 - t), base - h * t);
+                                ctx.stroke();
+                            }
+                            ctx.fillStyle = '#fff';
+                            ctx.beginPath();
+                            ctx.arc(0, base - h, 3.5, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    },
+                    {
+                        name: 'Top Hat', threshold: 3000,
+                        draw: (ctx, g) => {
+                            const base = g.topY, bw = g.bodyWidth, h = g.size * 0.9, cw = bw * 0.8;
+                            ctx.fillStyle = '#161616';
+                            ctx.beginPath();
+                            ctx.ellipse(0, base, bw * 0.92, 4, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.fillRect(-cw / 2, base - h, cw, h);
+                            ctx.fillStyle = '#c0392b';
+                            ctx.fillRect(-cw / 2, base - h * 0.3, cw, 5);
+                        }
+                    },
+                    {
+                        name: 'Crown', threshold: 6000,
+                        draw: (ctx, g) => {
+                            const base = g.topY, h = g.size * 0.55, w = g.bodyWidth * 1.0;
+                            ctx.fillStyle = '#f1c40f';
+                            ctx.beginPath();
+                            ctx.moveTo(-w / 2, base);
+                            ctx.lineTo(-w / 2, base - h * 0.45);
+                            ctx.lineTo(-w / 4, base - h * 0.12);
+                            ctx.lineTo(0, base - h);
+                            ctx.lineTo(w / 4, base - h * 0.12);
+                            ctx.lineTo(w / 2, base - h * 0.45);
+                            ctx.lineTo(w / 2, base);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.strokeStyle = '#c69500';
+                            ctx.lineWidth = 1;
+                            ctx.stroke();
+                            const gems = ['#e74c3c', '#3498db', '#2ecc71'];
+                            const gemX = [-w / 4, 0, w / 4];
+                            for (let i = 0; i < 3; i++) {
+                                ctx.fillStyle = gems[i];
+                                ctx.beginPath();
+                                ctx.arc(gemX[i], base - h * 0.2, 2.2, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        }
+                    }
+                ]
+            },
+            eyewear: {
+                label: 'Eyewear',
+                items: [
+                    { name: 'None', threshold: 0, draw: null },
+                    {
+                        name: 'Sunglasses', threshold: 1000,
+                        draw: (ctx, g) => {
+                            const eyeY = g.eyeY;
+                            ctx.fillStyle = '#111';
+                            ctx.fillRect(-14, eyeY - 5, 11, 9);
+                            ctx.fillRect(3, eyeY - 5, 11, 9);
+                            ctx.fillRect(-3, eyeY - 3, 6, 2);
+                            ctx.fillRect(-16, eyeY - 4, 3, 2);
+                            ctx.fillRect(13, eyeY - 4, 3, 2);
+                            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                            ctx.fillRect(-12, eyeY - 4, 3, 2);
+                            ctx.fillRect(5, eyeY - 4, 3, 2);
+                        }
+                    },
+                    {
+                        name: 'Nerd Glasses', threshold: 2500,
+                        draw: (ctx, g) => {
+                            const eyeY = g.eyeY;
+                            ctx.strokeStyle = '#222';
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.arc(-8, eyeY, 7, 0, Math.PI * 2);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.arc(8, eyeY, 7, 0, Math.PI * 2);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.moveTo(-1, eyeY);
+                            ctx.lineTo(1, eyeY);
+                            ctx.stroke();
+                        }
+                    },
+                    {
+                        name: '3D Glasses', threshold: 4500,
+                        draw: (ctx, g) => {
+                            const eyeY = g.eyeY;
+                            ctx.fillStyle = '#111';
+                            ctx.fillRect(-15, eyeY - 6, 30, 3);
+                            ctx.fillStyle = '#e33';
+                            ctx.fillRect(-14, eyeY - 4, 11, 9);
+                            ctx.fillStyle = '#39f';
+                            ctx.fillRect(3, eyeY - 4, 11, 9);
+                        }
+                    }
+                ]
+            },
+            cape: {
+                label: 'Cape',
+                items: [
+                    { name: 'None', threshold: 0, draw: null },
+                    {
+                        name: 'Red Cape', threshold: 2000,
+                        draw: (ctx, g) => {
+                            const topY = g.topY, bw = g.bodyWidth, bh = g.bodyHeight, size = g.size;
+                            const sway = Math.sin(gameTime / 300) * 4;
+                            ctx.fillStyle = '#c0392b';
+                            ctx.beginPath();
+                            ctx.moveTo(-bw * 0.4, topY + size * 0.2);
+                            ctx.lineTo(bw * 0.4, topY + size * 0.2);
+                            ctx.lineTo(bw * 0.75 + sway, topY + bh * 0.98);
+                            ctx.lineTo(-bw * 0.75 + sway, topY + bh * 0.98);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillStyle = '#e74c3c';
+                            ctx.fillRect(-bw * 0.45, topY + size * 0.12, bw * 0.9, size * 0.16);
+                        }
+                    },
+                    {
+                        name: 'Hero Cape', threshold: 4000,
+                        draw: (ctx, g) => {
+                            const topY = g.topY, bw = g.bodyWidth, bh = g.bodyHeight, size = g.size;
+                            const sway = Math.sin(gameTime / 260) * 6;
+                            ctx.fillStyle = '#2471a3';
+                            ctx.beginPath();
+                            ctx.moveTo(-bw * 0.45, topY + size * 0.18);
+                            ctx.lineTo(bw * 0.45, topY + size * 0.18);
+                            ctx.lineTo(bw * 0.9 + sway, topY + bh * 1.02);
+                            ctx.lineTo(-bw * 0.9 + sway, topY + bh * 1.02);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillStyle = '#f1c40f';
+                            ctx.beginPath();
+                            ctx.arc(sway * 0.4, topY + bh * 0.6, size * 0.16, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.fillStyle = '#5dade2';
+                            ctx.fillRect(-bw * 0.5, topY + size * 0.1, bw, size * 0.16);
+                        }
+                    }
+                ]
+            }
+        };
+        const CLOTHING_SLOTS = ['hat', 'eyewear', 'cape'];
+
+        // Player's manual wardrobe picks. undefined for a slot means "auto" (wear the
+        // highest unlocked item); a number is an explicit item index within that slot.
+        let manualChoice = { hat: undefined, eyewear: undefined, cape: undefined };
+        let wardrobeSlot = 0;              // which slot the pause wardrobe is editing
+        let lastUnlockThreshold = 0;       // highest clothing milestone already announced
+
+        // Items in a slot the current score has unlocked (always includes "None").
+        function unlockedItems(slotKey) {
+            return CLOTHING[slotKey].items.filter(item => score >= item.threshold);
+        }
+
+        // The item a slot should actually render: the manual pick if set and unlocked,
+        // otherwise the highest unlocked item in that slot.
+        function equippedItem(slotKey) {
+            const items = CLOTHING[slotKey].items;
+            const choice = manualChoice[slotKey];
+            if (choice !== undefined && items[choice] && score >= items[choice].threshold) {
+                return items[choice];
+            }
+            let best = items[0];
+            for (const item of items) {
+                if (score >= item.threshold) best = item;
+            }
+            return best;
+        }
+
+        // Move the active slot's selection to the previous/next unlocked item.
+        function cycleSlotItem(slotKey, direction) {
+            const items = CLOTHING[slotKey].items;
+            const unlocked = items
+                .map((item, index) => ({ item, index }))
+                .filter(entry => score >= entry.item.threshold);
+            if (unlocked.length === 0) return;
+            const current = equippedItem(slotKey);
+            let pos = unlocked.findIndex(entry => entry.item === current);
+            if (pos < 0) pos = 0;
+            pos = (pos + direction + unlocked.length) % unlocked.length;
+            manualChoice[slotKey] = unlocked[pos].index;
+        }
+
+        // Highest clothing threshold the current score has reached (0 if none).
+        function maxUnlockedThreshold() {
+            let max = 0;
+            for (const key of CLOTHING_SLOTS) {
+                for (const item of CLOTHING[key].items) {
+                    if (score >= item.threshold && item.threshold > max) max = item.threshold;
+                }
+            }
+            return max;
+        }
+
+        // Clear all wardrobe picks back to auto (used when a fresh run starts).
+        function resetWardrobe() {
+            manualChoice = { hat: undefined, eyewear: undefined, cape: undefined };
+            wardrobeSlot = 0;
+            lastUnlockThreshold = 0;
+        }
+
+        // Reset the pause wardrobe cursor to the first slot.
+        function initPauseMenu() {
+            wardrobeSlot = 0;
+        }
+
         // Game State
         let gameState = 'START';
         let currentLevel = 1;
@@ -453,6 +717,23 @@
         let highScore = parseInt(localStorage.getItem('greenbeanHighScore')) || 0;
         let cameraX = 0;
         let playingCustom = false;
+        let paused = false;
+
+        // Coins currency, purchased ally minions, and the shop (opened with Z).
+        let coins = 0;
+        let allies = [];
+        let shopOpen = false;
+        let shopIndex = 0;
+
+        // Talk mode (T): type a message that appears as a speech bubble over the bean.
+        let talking = false;
+        let talkBuffer = '';
+        let speechText = '';
+        let speechEndTime = 0;
+
+        // Transient banner shown when a new clothing item is unlocked.
+        let hatUnlockText = '';
+        let hatUnlockEndTime = 0;
 
         // Canvas Setup
         const bgCanvas = document.getElementById('bgCanvas');
@@ -1133,7 +1414,7 @@
             }
 
             // Add power-ups on or near platforms (cap at 12 powerups per level)
-            const powerupTypes = ['speed', 'doubleJump', 'shield', 'rapidFire', 'zeroGravity', 'bigBoy', 'enemySleep', 'invincibility'];
+            const powerupTypes = ['speed', 'doubleJump', 'shield', 'rapidFire', 'zeroGravity', 'bigBoy', 'enemySleep', 'invincibility', 'magnet'];
             const numPowerups = Math.min(levelNum + 2, 12);
             for (let i = 0; i < numPowerups; i++) {
                 // Pick a random platform (skip the ground)
@@ -1216,6 +1497,8 @@
                 this.muzzleFlash = 0;
                 this.coyoteTimer = 0;   // brief window to still jump after leaving a ledge
                 this.jumpHeld = false;  // true while a jump button is held (for variable height)
+                this.crouching = false; // true while a crouch button is held (S / Down)
+                this.crouchAmount = 0;  // eased 0..1 squash factor for smooth crouch animation
 
                 // Per-player state
                 this.health = 3;
@@ -1230,7 +1513,8 @@
                     zeroGravity: 0,
                     bigBoy: 0,
                     enemySleep: 0,
-                    invincibility: false
+                    invincibility: false,
+                    magnet: 0
                 };
 
                 // Player-specific colors
@@ -1324,6 +1608,10 @@
                     playSound('land');
                 }
 
+                // Ease the crouch squash toward its target (only crouch while grounded)
+                const crouchTarget = (this.crouching && this.onGround) ? 1 : 0;
+                this.crouchAmount += (crouchTarget - this.crouchAmount) * Math.min(1, dt * 15);
+
                 // Bob animation
                 this.bobPhase += dt * 5;
 
@@ -1361,10 +1649,13 @@
                     ctx.globalAlpha = 0.3;
                 }
 
-                // Apply big boy mode scaling
+                // Apply big boy mode scaling, pivoted on the feet (bottom of the collision
+                // box) so the bean grows upward and stays planted instead of sinking.
                 const bigBoyScale = this.powerups.bigBoy > 0 ? 1.5 : 1.0;
                 if (bigBoyScale !== 1.0) {
+                    ctx.translate(0, this.size);
                     ctx.scale(bigBoyScale, bigBoyScale);
+                    ctx.translate(0, -this.size);
                 }
 
                 // Lean when moving
@@ -1495,11 +1786,25 @@
                 ctx.ellipse(0, shadowOffset, this.size * 0.8 * shadowScale, this.size * 0.3 * shadowScale, 0, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Body (with idle breathing scale) - slimmer width for a more bean-like shape
+                // Body (with idle breathing scale) - slimmer width for a more bean-like shape.
+                // Crouching squashes the body shorter and wider while keeping feet planted.
                 const bodyScale = 1 + idleBreath;
-                const bodyWidth = this.size * bodyScale * 0.6;
-                const bodyHeight = this.size * 1.5 * bodyScale;
-                const topY = -this.size/2 + bob;
+                const heightScale = 1 - 0.4 * this.crouchAmount;
+                const widthScale = 1 + 0.35 * this.crouchAmount;
+                const bodyWidth = this.size * bodyScale * 0.6 * widthScale;
+                const bodyHeight = this.size * 2.0 * bodyScale * heightScale;
+                // Anchor the body's bottom to the feet (collision-box bottom) so extra
+                // height grows upward instead of sinking through the floor.
+                const topY = this.size - bodyHeight + bob;
+                // Keep the face near the top of the body (15px below the top at base size).
+                const eyeY = topY + this.size * 0.375 * heightScale;
+
+                // Shared geometry passed to every clothing item's draw function.
+                const clothingGeo = { topY, bodyWidth, bodyHeight, size: this.size, eyeY };
+
+                // Cape sits behind the body, so draw it first.
+                const capeItem = equippedItem('cape');
+                if (capeItem.draw) capeItem.draw(ctx, clothingGeo);
 
                 // Base color
                 ctx.fillStyle = this.bodyColor;
@@ -1524,15 +1829,19 @@
                 ctx.ellipse(-bodyWidth * 0.16, topY + this.size * 0.15, bodyWidth * 0.26, this.size * 0.15, 0, 0, Math.PI * 2);
                 ctx.fill();
 
+                // Cosmetic hat (chosen in the wardrobe, or highest unlocked), on the head.
+                const hatItem = equippedItem('hat');
+                if (hatItem.draw) hatItem.draw(ctx, clothingGeo);
+
                 if (this.dead) {
                     // X eyes for dead player
                     ctx.strokeStyle = '#fff';
                     ctx.lineWidth = 3;
                     ctx.beginPath();
-                    ctx.moveTo(-12, -9 + bob); ctx.lineTo(-4, -1 + bob);
-                    ctx.moveTo(-4, -9 + bob); ctx.lineTo(-12, -1 + bob);
-                    ctx.moveTo(4, -9 + bob); ctx.lineTo(12, -1 + bob);
-                    ctx.moveTo(12, -9 + bob); ctx.lineTo(4, -1 + bob);
+                    ctx.moveTo(-12, eyeY - 4); ctx.lineTo(-4, eyeY + 4);
+                    ctx.moveTo(-4, eyeY - 4); ctx.lineTo(-12, eyeY + 4);
+                    ctx.moveTo(4, eyeY - 4); ctx.lineTo(12, eyeY + 4);
+                    ctx.moveTo(12, eyeY - 4); ctx.lineTo(4, eyeY + 4);
                     ctx.stroke();
                 } else {
                     // Eyes (blink occasionally when idle)
@@ -1541,17 +1850,21 @@
 
                     ctx.fillStyle = '#fff';
                     ctx.beginPath();
-                    ctx.arc(-8, -5 + bob, eyeHeight, 0, Math.PI * 2);
-                    ctx.arc(8, -5 + bob, eyeHeight, 0, Math.PI * 2);
+                    ctx.arc(-8, eyeY, eyeHeight, 0, Math.PI * 2);
+                    ctx.arc(8, eyeY, eyeHeight, 0, Math.PI * 2);
                     ctx.fill();
 
                     if (!isBlinking) {
                         ctx.fillStyle = '#000';
                         ctx.beginPath();
-                        ctx.arc(-8, -5 + bob, 2, 0, Math.PI * 2);
-                        ctx.arc(8, -5 + bob, 2, 0, Math.PI * 2);
+                        ctx.arc(-8, eyeY, 2, 0, Math.PI * 2);
+                        ctx.arc(8, eyeY, 2, 0, Math.PI * 2);
                         ctx.fill();
                     }
+
+                    // Eyewear draws over living eyes.
+                    const eyewearItem = equippedItem('eyewear');
+                    if (eyewearItem.draw) eyewearItem.draw(ctx, clothingGeo);
                 }
 
                 if (this.dead) {
@@ -1594,6 +1907,175 @@
                 }
                 return true;
             }
+        }
+
+        // Shop offerings. `type` decides what a purchase does: 'drone' spawns an ally,
+        // 'heal' restores hearts, 'powerup' grants a powerup to every living bean.
+        const SHOP_ITEMS = [
+            { name: 'Blaster Drone', cost: 15, type: 'drone', color: '#3ddc84', range: 480, cooldown: 0.7,
+              desc: 'Floats beside you and blasts the nearest enemy.' },
+            { name: 'Rapid Drone', cost: 30, type: 'drone', color: '#00bcd4', range: 360, cooldown: 0.35,
+              desc: 'Shorter range, but fires twice as fast.' },
+            { name: 'Sniper Drone', cost: 45, type: 'drone', color: '#e056fd', range: 900, cooldown: 1.0,
+              desc: 'Long-range drone that snipes enemies from afar.' },
+            { name: 'Heal +2', cost: 20, type: 'heal', icon: '❤️', amount: 2,
+              desc: 'Restores 2 hearts to every living bean.' },
+            { name: 'Shield', cost: 12, type: 'powerup', icon: '🛡️', powerup: 'shield',
+              desc: 'Blocks the next hit for every bean.' },
+            { name: 'Rapid Fire', cost: 18, type: 'powerup', icon: '🔥', powerup: 'rapidFire',
+              desc: 'Faster shooting for 20 seconds.' },
+            { name: 'Big Boy', cost: 22, type: 'powerup', icon: '💪', powerup: 'bigBoy',
+              desc: 'Grow large and powerful for 15 seconds.' },
+            { name: 'Double Jump', cost: 25, type: 'powerup', icon: '🦘', powerup: 'doubleJump',
+              desc: 'Adds a permanent mid-air jump.' },
+            { name: 'Magnet', cost: 16, type: 'powerup', icon: '🧲', powerup: 'magnet',
+              desc: 'Pulls nearby coins & pickups to you for 15 seconds.' },
+            { name: 'Invincibility', cost: 50, type: 'powerup', icon: '✨', powerup: 'invincibility',
+              desc: 'Total immunity for the rest of the level.' }
+        ];
+
+        function nearestAlivePlayer(x, y, list) {
+            let best = null, bestDist = Infinity;
+            for (const p of list) {
+                if (p.dead) continue;
+                const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+                if (d < bestDist) { bestDist = d; best = p; }
+            }
+            return best;
+        }
+
+        // Closest attackable target (enemy or boss) within range, or null.
+        function nearestEnemyInRange(x, y, list, range) {
+            let best = null, bestDist = range * range;
+            for (const e of list) {
+                if (e.x < -1000 || e.sleeping) continue;
+                const d = (e.x - x) ** 2 + (e.y - y) ** 2;
+                if (d < bestDist) { bestDist = d; best = e; }
+            }
+            if (boss) {
+                const d = (boss.x - x) ** 2 + (boss.y - y) ** 2;
+                if (d < bestDist) { bestDist = d; best = boss; }
+            }
+            return best;
+        }
+
+        // A friendly minion bought in the shop. Hovers near the nearest player and fires
+        // at the closest enemy; its shots join the shared player-projectile pool so the
+        // existing projectile-enemy collisions apply the damage.
+        class AllyMinion {
+            constructor(x, y, config) {
+                this.x = x;
+                this.y = y;
+                this.size = 22;
+                this.config = config;
+                this.shootCooldown = config.cooldown;
+                this.bob = 0;
+            }
+
+            update(dt, playerList, enemyList, index, count) {
+                const anchor = nearestAlivePlayer(this.x, this.y, playerList);
+                if (anchor) {
+                    // Spread drones evenly around the bean so they never stack on top
+                    // of each other, on a slightly flattened orbit above the head.
+                    const angle = count > 0 ? (index / count) * Math.PI * 2 : 0;
+                    const radius = 52;
+                    const desiredX = anchor.x + Math.cos(angle) * radius;
+                    const desiredY = anchor.y - 35 + Math.sin(angle) * radius * 0.6;
+                    this.x += (desiredX - this.x) * Math.min(1, dt * 4);
+                    this.y += (desiredY - this.y) * Math.min(1, dt * 4);
+                }
+                this.bob += dt * 4;
+
+                this.shootCooldown -= dt;
+                if (this.shootCooldown <= 0) {
+                    const target = nearestEnemyInRange(this.x, this.y, enemyList, this.config.range);
+                    if (target) {
+                        this.shootCooldown = this.config.cooldown;
+                        const dx = target.x - this.x;
+                        const dy = target.y - this.y;
+                        const dist = Math.hypot(dx, dy) || 1;
+                        const speed = 20;
+                        projectiles.push({
+                            x: this.x, y: this.y,
+                            vx: dx / dist * speed, vy: dy / dist * speed, size: 6
+                        });
+                        playSound('shoot');
+                    }
+                }
+            }
+
+            draw(ctx, cameraX) {
+                const sx = this.x - cameraX;
+                const sy = this.y + Math.sin(this.bob) * 4;
+                ctx.save();
+                ctx.translate(sx, sy);
+                ctx.fillStyle = this.config.color;
+                ctx.globalAlpha = 0.3;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.size * 0.55, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(3, -2, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(4, -2, 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Spend coins on a shop item, applying its effect based on the item type.
+        function buyShopItem(index) {
+            const item = SHOP_ITEMS[index];
+            if (!item) return;
+            if (coins < item.cost) {
+                showSaveMessage('Not enough coins!');
+                return;
+            }
+
+            if (item.type === 'drone') {
+                const anchor = nearestAlivePlayer(cameraX + WIDTH / 2, HEIGHT / 2, players) || players[0];
+                const ax = anchor ? anchor.x - 45 : cameraX + WIDTH / 2;
+                const ay = anchor ? anchor.y - 60 : HEIGHT / 2;
+                allies.push(new AllyMinion(ax, ay, item));
+            } else if (item.type === 'heal') {
+                let healedAny = false;
+                players.forEach(p => {
+                    if (!p.dead && p.health < 6) {
+                        p.health = Math.min(6, p.health + item.amount);
+                        healedAny = true;
+                    }
+                });
+                if (!healedAny) {
+                    showSaveMessage('Already at full health!');
+                    return;
+                }
+            } else if (item.type === 'powerup') {
+                players.forEach(p => {
+                    if (p.dead) return;
+                    if (item.powerup === 'shield') p.powerups.shield = true;
+                    else if (item.powerup === 'rapidFire') p.powerups.rapidFire = 20;
+                    else if (item.powerup === 'bigBoy') p.powerups.bigBoy = 15;
+                    else if (item.powerup === 'invincibility') p.powerups.invincibility = true;
+                    else if (item.powerup === 'magnet') p.powerups.magnet = 15;
+                    else if (item.powerup === 'doubleJump') {
+                        p.powerups.doubleJump += 1;
+                        p.hasDoubleJump = p.powerups.doubleJump;
+                    }
+                });
+            }
+
+            coins -= item.cost;
+            playSound('powerup');
+            updateUI();
+            updatePowerupDisplay();
+            showSaveMessage(item.name + ' purchased!');
         }
 
         class Enemy {
@@ -2635,11 +3117,18 @@
             const p2Exists = players.length > 1;
 
             if (!p2Exists) {
-                // First time joining: create P2
+                // First time joining: create P2 matching P1's health and powerups so both
+                // beans start equal (coins are already a single shared pool).
                 const spawnX = cameraX + WIDTH / 2;
                 const p2 = new Player(1, spawnX);
                 p2.y = -50;
                 p2.vy = 0;
+                const p1 = players[0];
+                if (p1 && !p1.dead) {
+                    p2.health = p1.health;
+                    p2.powerups = { ...p1.powerups };
+                    p2.hasDoubleJump = p1.powerups.doubleJump;
+                }
                 players.push(p2);
             } else {
                 // P2 already exists but is dead: revive with drop-in
@@ -2661,7 +3150,8 @@
                     zeroGravity: 0,
                     bigBoy: 0,
                     enemySleep: 0,
-                    invincibility: false
+                    invincibility: false,
+                    magnet: 0
                 };
             }
 
@@ -2684,6 +3174,28 @@
         }
 
         document.addEventListener('keydown', (e) => {
+            // Talk mode captures all typing for the speech bubble (before gameplay keys).
+            if (talking) {
+                if (e.key === 'Enter') {
+                    const msg = talkBuffer.trim();
+                    if (msg) {
+                        speechText = msg.slice(0, 60);
+                        speechEndTime = gameTime + 4000;
+                    }
+                    talking = false;
+                    talkBuffer = '';
+                } else if (e.key === 'Escape') {
+                    talking = false;
+                    talkBuffer = '';
+                } else if (e.key === 'Backspace') {
+                    talkBuffer = talkBuffer.slice(0, -1);
+                } else if (e.key.length === 1 && talkBuffer.length < 60) {
+                    talkBuffer += e.key;
+                }
+                e.preventDefault();
+                return;
+            }
+
             keys[e.key.toLowerCase()] = true;
 
             if (gameState === 'START') {
@@ -2697,6 +3209,80 @@
             }
 
             if (gameState !== 'PLAYING') return;
+
+            // Toggle pause with B (P1) or G (P2), edge-triggered so auto-repeat can't flicker it.
+            if ((e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'g') && !e.repeat && !shopOpen) {
+                paused = !paused;
+                if (paused) initPauseMenu();
+                e.preventDefault();
+                return;
+            }
+
+            // Open/close the shop with Z (not while paused).
+            if (e.key.toLowerCase() === 'z' && !e.repeat && !paused) {
+                shopOpen = !shopOpen;
+                if (shopOpen) shopIndex = 0;
+                e.preventDefault();
+                return;
+            }
+
+            // While the shop is open, Up/Down selects, Enter buys, Z closes (above).
+            if (shopOpen) {
+                const k = e.key.toLowerCase();
+                if (k === 'arrowup' || k === 'w') {
+                    shopIndex = (shopIndex - 1 + SHOP_ITEMS.length) % SHOP_ITEMS.length;
+                    e.preventDefault();
+                } else if (k === 'arrowdown' || k === 's') {
+                    shopIndex = (shopIndex + 1) % SHOP_ITEMS.length;
+                    e.preventDefault();
+                } else if (e.key === 'Enter') {
+                    buyShopItem(shopIndex);
+                    e.preventDefault();
+                }
+                return;
+            }
+
+            // Start talking with T: freezes the action and captures typed text.
+            if (e.key.toLowerCase() === 't' && !e.repeat) {
+                talking = true;
+                talkBuffer = '';
+                for (const key in keys) keys[key] = false; // stop moving while typing
+                e.preventDefault();
+                return;
+            }
+            // While paused, the pause screen is a wardrobe: Up/Down picks a clothing slot,
+            // Left/Right swaps the item in that slot. Everything else is swallowed.
+            if (paused) {
+                const k = e.key.toLowerCase();
+                if (k === 'arrowup' || k === 'w') {
+                    wardrobeSlot = (wardrobeSlot - 1 + CLOTHING_SLOTS.length) % CLOTHING_SLOTS.length;
+                    e.preventDefault();
+                } else if (k === 'arrowdown' || k === 's') {
+                    wardrobeSlot = (wardrobeSlot + 1) % CLOTHING_SLOTS.length;
+                    e.preventDefault();
+                } else if (k === 'arrowleft' || k === 'a') {
+                    cycleSlotItem(CLOTHING_SLOTS[wardrobeSlot], -1);
+                    e.preventDefault();
+                } else if (k === 'arrowright' || k === 'd') {
+                    cycleSlotItem(CLOTHING_SLOTS[wardrobeSlot], 1);
+                    e.preventDefault();
+                }
+                return;
+            }
+
+            // Keep arrow keys from scrolling the page while playing.
+            const arrowKey = e.key.toLowerCase();
+            if (arrowKey === 'arrowup' || arrowKey === 'arrowdown' ||
+                arrowKey === 'arrowleft' || arrowKey === 'arrowright') {
+                e.preventDefault();
+            }
+
+            // Save progress with S.
+            if (e.key.toLowerCase() === 's' && !e.repeat) {
+                saveGame();
+                e.preventDefault();
+                return;
+            }
 
             if (playingCustom && e.key === 'Escape') {
                 returnToEditor();
@@ -2790,6 +3376,118 @@
             }
         });
 
+        // Saved-progress storage + a brief on-screen confirmation toast.
+        const SAVE_KEY = 'greenbeanSave';
+        let saveMessage = '';
+        let saveMessageEndTime = 0;
+
+        function showSaveMessage(text) {
+            saveMessage = text;
+            saveMessageEndTime = gameTime + 1800;
+        }
+
+        // Persist the current run (level, score, and each living bean's health + powerups).
+        function saveGame() {
+            if (playingCustom) {
+                showSaveMessage('Custom levels cannot be saved');
+                return;
+            }
+            const livingPlayers = players.filter(p => !p.dead);
+            if (livingPlayers.length === 0) return;
+            const data = {
+                currentLevel,
+                score,
+                coins,
+                allies: allies.map(a => a.config.name),
+                players: livingPlayers.map(p => ({
+                    health: p.health,
+                    powerups: { ...p.powerups }
+                }))
+            };
+            try {
+                localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+                showSaveMessage('Game saved!');
+            } catch (e) {
+                showSaveMessage('Save failed');
+            }
+        }
+
+        function hasSavedGame() {
+            return !!localStorage.getItem(SAVE_KEY);
+        }
+
+        // Reveal the Continue button on the start screen when a save exists.
+        function refreshContinueButton() {
+            const btn = document.getElementById('continueButton');
+            if (btn) btn.style.display = hasSavedGame() ? '' : 'none';
+        }
+
+        // Resume a saved run: rebuild the saved level with the saved beans, health, powerups.
+        function continueGame() {
+            const raw = localStorage.getItem(SAVE_KEY);
+            if (!raw) return;
+            let data;
+            try {
+                data = JSON.parse(raw);
+            } catch (e) {
+                return;
+            }
+            if (!audioContext) {
+                initAudio();
+            }
+
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('ui').style.display = '';
+            document.getElementById('bossWarning').classList.add('hidden');
+
+            gameState = 'PLAYING';
+            paused = false;
+            shopOpen = false;
+            talking = false;
+            speechText = '';
+            resetWardrobe();
+            playingCustom = false;
+            currentLevel = data.currentLevel;
+            score = data.score;
+            coins = data.coins || 0;
+            // Rebuild saved drones by matching their type back to a shop item.
+            allies = (data.allies || []).map(name => {
+                const config = SHOP_ITEMS.find(item => item.name === name);
+                return config ? new AllyMinion(140, HEIGHT - 260, config) : null;
+            }).filter(Boolean);
+            lastUnlockThreshold = maxUnlockedThreshold();
+            cameraX = 0;
+            boss = null;
+
+            const savedPlayers = (data.players && data.players.length)
+                ? data.players
+                : [{ health: 3, powerups: {} }];
+            players = savedPlayers.map((state, i) => {
+                const p = new Player(i, i === 0 ? 100 : 150);
+                p.health = state.health;
+                p.powerups = Object.assign({
+                    speed: false, doubleJump: 0, shield: false, rapidFire: 0,
+                    zeroGravity: 0, bigBoy: 0, enemySleep: 0, invincibility: false, magnet: 0
+                }, state.powerups || {});
+                p.hasDoubleJump = p.powerups.doubleJump;
+                return p;
+            });
+
+            level = generateLevel(currentLevel);
+            if (boss) {
+                document.getElementById('bossWarning').textContent = '⚠️ ' + boss.config.name + ' ⚠️';
+            }
+            particles = [];
+            projectiles = [];
+            bossProjectiles = [];
+            enemyProjectiles = [];
+            levelStartTime = gameTime;
+
+            updatePlayerUIVisibility();
+            updateUI();
+            startMusic();
+        }
+
         function startGame() {
             if (!audioContext) {
                 initAudio();
@@ -2799,9 +3497,16 @@
             document.getElementById('highScore').textContent = highScore;
 
             gameState = 'PLAYING';
+            paused = false;
+            shopOpen = false;
+            talking = false;
+            speechText = '';
+            resetWardrobe();
             playingCustom = false;
             currentLevel = 1;
             score = 0;
+            coins = 0;
+            allies = [];
             cameraX = 0;
 
             document.getElementById('ui').style.display = '';
@@ -2891,7 +3596,8 @@
                     zeroGravity: 0,
                     bigBoy: 0,
                     enemySleep: 0,
-                    invincibility: false
+                    invincibility: false,
+                    magnet: 0
                 };
             });
 
@@ -2906,6 +3612,9 @@
             cameraX = 0;
             levelStartTime = gameTime;
             gameState = 'PLAYING';
+
+            // Purchased ally minions carry over; drop them back beside the start.
+            allies.forEach(a => { a.x = 140; a.y = HEIGHT - 260; });
 
             updateUI();
         }
@@ -2969,6 +3678,7 @@
             if (pups.zeroGravity > 0) active.push('🎈' + Math.ceil(pups.zeroGravity));
             if (pups.bigBoy > 0) active.push('💪' + Math.ceil(pups.bigBoy));
             if (pups.enemySleep > 0) active.push('💤' + Math.ceil(pups.enemySleep));
+            if (pups.magnet > 0) active.push('🧲' + Math.ceil(pups.magnet));
             if (pups.invincibility) active.push('✨');
             return active.join(' ');
         }
@@ -2985,6 +3695,25 @@
         function updateUI() {
             document.getElementById('level').textContent = currentLevel;
             document.getElementById('score').textContent = score;
+            document.getElementById('coins').textContent = coins;
+
+            // Announce when the score crosses into a new clothing milestone (highest new one).
+            let newestName = null;
+            let newestThreshold = lastUnlockThreshold;
+            for (const key of CLOTHING_SLOTS) {
+                for (const item of CLOTHING[key].items) {
+                    if (item.threshold > lastUnlockThreshold && score >= item.threshold &&
+                        item.threshold >= newestThreshold) {
+                        newestThreshold = item.threshold;
+                        newestName = item.name;
+                    }
+                }
+            }
+            if (newestName) {
+                hatUnlockText = 'New clothing: ' + newestName + '!';
+                hatUnlockEndTime = gameTime + 3000;
+                lastUnlockThreshold = newestThreshold;
+            }
 
             players.forEach((p, i) => {
                 let heartsStr = '';
@@ -3051,7 +3780,10 @@
             // Player 1 input
             const p2Active = players.length > 1;
             const p1 = players[0];
+            if (p1) p1.crouching = false;
             if (p1 && !p1.dead && !p1.fallingIntoGoal) {
+                // P1 crouches with C; Down also crouches P1 only in single-player mode.
+                p1.crouching = !!keys['c'] || (!p2Active && !!keys['arrowdown']);
                 let dx = 0;
                 if (keys['a']) dx -= 1;
                 if (keys['d']) dx += 1;
@@ -3062,21 +3794,27 @@
                 }
                 if (dx !== 0) p1.facingDirection = dx;
                 if (glitchIntensity > 0.5 && Math.random() < 0.1) dx *= -1;
+                // Crouching on the ground slows the shuffle to a crawl.
+                const crouchFactor1 = (p1.crouching && p1.onGround) ? 0.4 : 1;
                 const moveSpeed1 = p1.powerups.speed ? MOVE_SPEED * 1.5 : MOVE_SPEED;
-                p1.vx += dx * moveSpeed1 * dt * 60;
+                p1.vx += dx * moveSpeed1 * crouchFactor1 * dt * 60;
             }
 
             // Player 2 input
             if (p2Active) {
                 const p2 = players[1];
+                if (p2) p2.crouching = false;
                 if (p2 && !p2.dead && !p2.fallingIntoGoal) {
+                    // P2 crouches with the Down arrow.
+                    p2.crouching = !!keys['arrowdown'];
                     let dx = 0;
                     if (keys['arrowleft']) dx -= 1;
                     if (keys['arrowright']) dx += 1;
                     if (dx !== 0) p2.facingDirection = dx;
                     if (glitchIntensity > 0.5 && Math.random() < 0.1) dx *= -1;
+                    const crouchFactor2 = (p2.crouching && p2.onGround) ? 0.4 : 1;
                     const moveSpeed2 = p2.powerups.speed ? MOVE_SPEED * 1.5 : MOVE_SPEED;
-                    p2.vx += dx * moveSpeed2 * dt * 60;
+                    p2.vx += dx * moveSpeed2 * crouchFactor2 * dt * 60;
                 }
             }
 
@@ -3109,6 +3847,11 @@
                     if (pups.enemySleep <= 0) pups.enemySleep = 0;
                     timedPowerupsChanged = true;
                 }
+                if (pups.magnet > 0) {
+                    pups.magnet -= dt;
+                    if (pups.magnet <= 0) pups.magnet = 0;
+                    timedPowerupsChanged = true;
+                }
                 if (pups.enemySleep > 0) anyEnemySleepActive = true;
             });
 
@@ -3119,6 +3862,32 @@
 
             if (timedPowerupsChanged) {
                 updatePowerupDisplay();
+            }
+
+            // Magnet: draw nearby collectibles and health pickups toward any bean whose
+            // magnet is active, so they get scooped up automatically.
+            const magnetPlayers = players.filter(p => !p.dead && p.powerups.magnet > 0);
+            if (magnetPlayers.length) {
+                const MAGNET_RANGE = 280;
+                const pullTowardMagnet = items => {
+                    items.forEach(item => {
+                        let nearest = null, nearestDist = MAGNET_RANGE * MAGNET_RANGE;
+                        for (const p of magnetPlayers) {
+                            const d = (p.x - item.x) ** 2 + (p.y - item.y) ** 2;
+                            if (d < nearestDist) { nearestDist = d; nearest = p; }
+                        }
+                        if (nearest) {
+                            const dx = nearest.x - item.x;
+                            const dy = nearest.y - item.y;
+                            const dist = Math.hypot(dx, dy) || 1;
+                            const pull = 7 * dt * 60;
+                            item.x += (dx / dist) * pull;
+                            item.y += (dy / dist) * pull;
+                        }
+                    });
+                };
+                pullTowardMagnet(level.collectibles);
+                pullTowardMagnet(level.healthPickups);
             }
 
             // Auto-shoot with rapid fire per player
@@ -3144,6 +3913,9 @@
 
             // Update enemies
             level.enemies.forEach(e => e.update(dt, level.platforms, players));
+
+            // Update ally minions bought from the shop
+            allies.forEach((a, i) => a.update(dt, players, level.enemies, i, allies.length));
 
             // Enemy shooting
             level.enemies.forEach(e => {
@@ -3219,6 +3991,7 @@
 
                         if (e.health <= 0) {
                             score += 50;
+                            coins += 2;
                             playSound('collect');
                             const dropX = e.x;
                             const dropY = e.y;
@@ -3413,6 +4186,7 @@
                     if (p.dead) continue;
                     if (Math.abs(c.x - p.x) < 30 && Math.abs(c.y - p.y) < 30) {
                         score += 10;
+                        coins += 1;
                         updateUI();
                         playSound('collect');
 
@@ -3440,6 +4214,7 @@
                             pups.bigBoy = 15;
                             pups.enemySleep = 20;
                             pups.invincibility = true;
+                            pups.magnet = 15;
                             level.enemies.forEach(e => e.sleeping = true);
                         } else if (pu.type === 'doubleJump') {
                             pups.doubleJump = pups.doubleJump + 1;
@@ -3454,6 +4229,8 @@
                             level.enemies.forEach(e => e.sleeping = true);
                         } else if (pu.type === 'invincibility') {
                             pups.invincibility = true;
+                        } else if (pu.type === 'magnet') {
+                            pups.magnet = 15;
                         } else {
                             pups[pu.type] = true;
                         }
@@ -3559,15 +4336,10 @@
             });
         }
 
-        function renderGame() {
-            ctx.save();
-            ctx.translate(
-                (Math.random() - 0.5) * screenShakeX,
-                (Math.random() - 0.5) * screenShakeY
-            );
-
-            ctx.clearRect(0, 0, WIDTH, HEIGHT);
-
+        // Draws the entire world (platforms, items, enemies, players, particles) using the
+        // global cameraX as the horizontal camera. Called once full-screen, or once per
+        // viewport when the screen is split.
+        function drawWorld() {
             // Draw platforms with lit, extruded shading (top face + highlight + shaded underside)
             level.platforms.forEach(p => {
                 const sx = p.x - cameraX;
@@ -3652,7 +4424,8 @@
                         zeroGravity: '🎈',
                         bigBoy: '💪',
                         enemySleep: '💤',
-                        invincibility: '✨'
+                        invincibility: '✨',
+                        magnet: '🧲'
                     };
                     ctx.font = '30px Arial';
                     ctx.textAlign = 'center';
@@ -3779,6 +4552,9 @@
             // Draw enemies
             level.enemies.forEach(e => e.draw(ctx, cameraX));
 
+            // Draw ally minions
+            allies.forEach(a => a.draw(ctx, cameraX));
+
             // Draw projectiles with glow
             projectiles.forEach(p => {
                 const screenX = p.x - cameraX;
@@ -3894,12 +4670,168 @@
             // Draw particles
             particles.forEach(p => p.draw(ctx, cameraX));
 
+            // Speech bubble above P1 while talking or showing a recent message.
+            const speaker = players[0];
+            if (speaker && !speaker.dead) {
+                let bubble = null;
+                if (talking) bubble = talkBuffer + '|';
+                else if (speechText && gameTime < speechEndTime) bubble = speechText;
+                if (bubble !== null) drawSpeechBubble(speaker.x - cameraX, speaker.y - 60, bubble);
+            }
+        }
+
+        // A rounded speech bubble with a tail, centered above (sx, sy).
+        function drawSpeechBubble(sx, sy, text) {
+            ctx.save();
+            ctx.font = '18px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const padding = 12;
+            const textWidth = Math.max(20, ctx.measureText(text).width);
+            const boxW = textWidth + padding * 2;
+            const boxH = 34;
+            const boxX = sx - boxW / 2;
+            const boxY = sy - boxH;
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.rect(boxX, boxY, boxW, boxH);
+            ctx.fill();
+            ctx.stroke();
+
+            // Tail pointing down to the bean
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.beginPath();
+            ctx.moveTo(sx - 6, boxY + boxH);
+            ctx.lineTo(sx + 6, boxY + boxH);
+            ctx.lineTo(sx, boxY + boxH + 10);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = '#111';
+            ctx.fillText(text, sx, boxY + boxH / 2);
+            ctx.restore();
+        }
+
+        // Horizontal gap between the two beans that toggles split-screen, with hysteresis
+        // so the view doesn't flicker when they hover around the threshold.
+        const SPLIT_ON = WIDTH * 0.72;
+        const SPLIT_OFF = WIDTH * 0.6;
+        let splitScreen = false;
+
+        // Clamp a half-width viewport's camera so it centers a bean without leaving the level.
+        function halfViewCamera(playerX) {
+            const halfWidth = WIDTH / 2;
+            return Math.max(0, Math.min(playerX - halfWidth / 2, level.width - halfWidth));
+        }
+
+        // Draws the world once through a clipped, x-offset viewport using the given camera.
+        function renderViewport(camX, viewportX, viewportWidth) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(viewportX, 0, viewportWidth, HEIGHT);
+            ctx.clip();
+            ctx.translate(viewportX, 0);
+            const savedCamera = cameraX;
+            cameraX = camX;
+            drawWorld();
+            cameraX = savedCamera;
+            ctx.restore();
+        }
+
+        // Divider bar plus a P1/P2 tag on each half when the screen is split.
+        function drawSplitDivider(leftBean, rightBean) {
+            const x = WIDTH / 2;
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(x - 3, 0, 6, HEIGHT);
+            ctx.fillStyle = 'rgba(111, 179, 63, 0.9)';
+            ctx.fillRect(x - 1, 0, 2, HEIGHT);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 18px Arial';
+            ctx.textBaseline = 'top';
+            ctx.textAlign = 'left';
+            ctx.fillText(leftBean.playerIndex === 0 ? 'P1' : 'P2', 12, 12);
+            ctx.textAlign = 'right';
+            ctx.fillText(rightBean.playerIndex === 0 ? 'P1' : 'P2', WIDTH - 12, 12);
+            ctx.restore();
+        }
+
+        function renderGame() {
+            ctx.save();
+            ctx.translate(
+                (Math.random() - 0.5) * screenShakeX,
+                (Math.random() - 0.5) * screenShakeY
+            );
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+            // Split the screen only when both beans are alive and far enough apart that a
+            // single camera can't hold both; otherwise render one full-screen view.
+            const p1 = players[0];
+            const p2 = players[1];
+            const bothActive = players.length > 1 && p1 && p2 &&
+                !p1.dead && !p2.dead && !p1.reachedGoal && !p2.reachedGoal;
+            if (bothActive) {
+                const gap = Math.abs(p1.x - p2.x);
+                if (splitScreen && gap < SPLIT_OFF) splitScreen = false;
+                else if (!splitScreen && gap > SPLIT_ON) splitScreen = true;
+            } else {
+                splitScreen = false;
+            }
+
+            if (splitScreen) {
+                const leftBean = p1.x <= p2.x ? p1 : p2;
+                const rightBean = p1.x <= p2.x ? p2 : p1;
+                const half = WIDTH / 2;
+                renderViewport(halfViewCamera(leftBean.x), 0, half);
+                renderViewport(halfViewCamera(rightBean.x), half, half);
+                drawSplitDivider(leftBean, rightBean);
+            } else {
+                renderViewport(cameraX, 0, WIDTH);
+            }
+
             // Subtle vignette for depth (darkens edges, keeps the action lit in the center)
             const vignette = ctx.createRadialGradient(WIDTH/2, HEIGHT/2, HEIGHT * 0.35, WIDTH/2, HEIGHT/2, HEIGHT * 0.85);
             vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
             vignette.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
             ctx.fillStyle = vignette;
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            // Transient banner when a new hat milestone is reached.
+            if (hatUnlockText && gameTime < hatUnlockEndTime) {
+                const alpha = Math.min(1, (hatUnlockEndTime - gameTime) / 600);
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.font = 'bold 28px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const bannerY = 90;
+                const textWidth = ctx.measureText(hatUnlockText).width;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+                ctx.fillRect(WIDTH / 2 - textWidth / 2 - 16, bannerY - 22, textWidth + 32, 44);
+                ctx.fillStyle = '#ffe27a';
+                ctx.fillText(hatUnlockText, WIDTH / 2, bannerY);
+                ctx.restore();
+            }
+
+            // Transient save confirmation toast near the bottom.
+            if (saveMessage && gameTime < saveMessageEndTime) {
+                const alpha = Math.min(1, (saveMessageEndTime - gameTime) / 500);
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const toastY = HEIGHT - 60;
+                const textWidth = ctx.measureText(saveMessage).width;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(WIDTH / 2 - textWidth / 2 - 14, toastY - 18, textWidth + 28, 36);
+                ctx.fillStyle = '#8fe0c0';
+                ctx.fillText(saveMessage, WIDTH / 2, toastY);
+                ctx.restore();
+            }
 
             ctx.restore();
         }
@@ -3921,7 +4853,7 @@
         const EDITOR_ENEMY_SIZES = { tank: 70, fast: 35 };
         const EDITOR_POWERUP_ICONS = {
             speed: '⚡', doubleJump: '🦘', shield: '🛡️', rapidFire: '🔥',
-            zeroGravity: '🎈', bigBoy: '💪', enemySleep: '💤', invincibility: '✨'
+            zeroGravity: '🎈', bigBoy: '💪', enemySleep: '💤', invincibility: '✨', magnet: '🧲'
         };
 
         let editorLevel = null;
@@ -4019,6 +4951,7 @@
             document.getElementById('ui').style.display = '';
             document.getElementById('startScreen').classList.remove('hidden');
             document.getElementById('highScore').textContent = highScore;
+            refreshContinueButton();
         }
 
         function returnToEditor() {
@@ -4068,8 +5001,15 @@
             document.getElementById('miniGameWarning').classList.add('hidden');
 
             gameState = 'PLAYING';
+            paused = false;
+            shopOpen = false;
+            talking = false;
+            speechText = '';
+            resetWardrobe();
             playingCustom = true;
             currentLevel = 1;
+            coins = 0;
+            allies = [];
             score = 0;
             cameraX = 0;
             boss = null;
@@ -4364,6 +5304,204 @@
 
         let lastTime = performance.now();
 
+        // Draws a preview bean (centered on the current transform origin) wearing whatever
+        // is currently equipped in every slot, matching the in-game bean's look.
+        function drawPreviewBean(feetY, size) {
+            const bodyWidth = size * 0.6;
+            const bodyHeight = size * 2.0;
+            const topY = feetY - bodyHeight;
+            const eyeY = topY + size * 0.375;
+            const geo = { topY, bodyWidth, bodyHeight, size, eyeY };
+
+            const capeItem = equippedItem('cape');
+            if (capeItem.draw) capeItem.draw(ctx, geo);
+
+            ctx.fillStyle = '#2d5016';
+            ctx.fillRect(-bodyWidth / 2, topY, bodyWidth, bodyHeight);
+
+            const lightGrad = ctx.createLinearGradient(0, topY, 0, topY + bodyHeight);
+            lightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+            lightGrad.addColorStop(0.3, 'rgba(255, 255, 255, 0)');
+            lightGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
+            lightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.38)');
+            ctx.fillStyle = lightGrad;
+            ctx.fillRect(-bodyWidth / 2, topY, bodyWidth, bodyHeight);
+
+            ctx.fillStyle = '#6fb33f';
+            ctx.fillRect(-bodyWidth / 2, topY, bodyWidth, size * 0.3);
+
+            const hatItem = equippedItem('hat');
+            if (hatItem.draw) hatItem.draw(ctx, geo);
+
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(-8, eyeY, 5, 0, Math.PI * 2);
+            ctx.arc(8, eyeY, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(-8, eyeY, 2, 0, Math.PI * 2);
+            ctx.arc(8, eyeY, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            const eyewearItem = equippedItem('eyewear');
+            if (eyewearItem.draw) eyewearItem.draw(ctx, geo);
+        }
+
+        // Pause screen: a wardrobe with a slot per clothing type, over the frozen scene.
+        function drawPauseOverlay() {
+            const cx = WIDTH / 2;
+            if (wardrobeSlot >= CLOTHING_SLOTS.length) wardrobeSlot = 0;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            // Panel
+            const panelX = cx - 320, panelY = 90, panelW = 640, panelH = 620;
+            ctx.fillStyle = 'rgba(16, 22, 16, 0.94)';
+            ctx.strokeStyle = 'rgba(111, 179, 63, 0.7)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.rect(panelX, panelY, panelW, panelH);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 48px Arial';
+            ctx.fillText('PAUSED', cx, panelY + 56);
+            ctx.fillStyle = '#8fe0c0';
+            ctx.font = 'bold 22px Arial';
+            ctx.fillText('WARDROBE', cx, panelY + 100);
+
+            // Live preview of the full outfit
+            const feetY = panelY + 330;
+            ctx.save();
+            ctx.translate(cx, 0);
+            drawPreviewBean(feetY, 64);
+            ctx.restore();
+
+            // One row per clothing slot; the active slot is highlighted with chevrons.
+            const firstRowY = panelY + 400;
+            for (let i = 0; i < CLOTHING_SLOTS.length; i++) {
+                const slotKey = CLOTHING_SLOTS[i];
+                const item = equippedItem(slotKey);
+                const rowY = firstRowY + i * 48;
+                const active = i === wardrobeSlot;
+                ctx.fillStyle = active ? '#ffe27a' : 'rgba(255, 255, 255, 0.7)';
+                ctx.font = active ? 'bold 26px Arial' : '22px Arial';
+                const label = CLOTHING[slotKey].label + ':  ' + item.name;
+                ctx.fillText(active ? '‹  ' + label + '  ›' : label, cx, rowY);
+            }
+
+            // Footer hint
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.font = '18px Arial';
+            ctx.fillText('↑ / ↓ pick slot   ·   ← / → swap   ·   B or G to resume', cx, panelY + panelH - 30);
+
+            ctx.restore();
+        }
+
+        // Shop screen: spend coins on drones, healing, and powerups, over the frozen scene.
+        function drawShopOverlay() {
+            const cx = WIDTH / 2;
+            if (shopIndex >= SHOP_ITEMS.length) shopIndex = 0;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            const panelX = cx - 320, panelY = 70, panelW = 640, panelH = 660;
+            ctx.fillStyle = 'rgba(16, 22, 16, 0.94)';
+            ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.rect(panelX, panelY, panelW, panelH);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 44px Arial';
+            ctx.fillText('SHOP', cx, panelY + 44);
+            ctx.fillStyle = '#ffd700';
+            ctx.font = 'bold 22px Arial';
+            ctx.fillText('🪙 ' + coins + ' coins   ·   Minions: ' + allies.length, cx, panelY + 84);
+
+            // One compact row per item
+            const firstRowY = panelY + 120;
+            const rowH = 50;
+            for (let i = 0; i < SHOP_ITEMS.length; i++) {
+                const item = SHOP_ITEMS[i];
+                const rowTop = firstRowY + i * rowH;
+                const midY = rowTop + (rowH - 6) / 2;
+                const active = i === shopIndex;
+                const affordable = coins >= item.cost;
+
+                if (active) {
+                    ctx.fillStyle = 'rgba(255, 215, 0, 0.15)';
+                    ctx.strokeStyle = '#ffd700';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.rect(panelX + 20, rowTop, panelW - 40, rowH - 6);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+
+                // Icon: drones draw a colored eye, other items use their emoji
+                const iconX = panelX + 52;
+                if (item.type === 'drone') {
+                    ctx.fillStyle = item.color;
+                    ctx.beginPath();
+                    ctx.arc(iconX, midY, 15, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#fff';
+                    ctx.beginPath();
+                    ctx.arc(iconX + 3, midY - 2, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#000';
+                    ctx.beginPath();
+                    ctx.arc(iconX + 4, midY - 2, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    ctx.textAlign = 'center';
+                    ctx.font = '26px Arial';
+                    ctx.fillText(item.icon, iconX, midY);
+                }
+
+                ctx.textAlign = 'left';
+                ctx.fillStyle = active ? '#ffe27a' : '#fff';
+                ctx.font = active ? 'bold 22px Arial' : '20px Arial';
+                ctx.fillText(item.name, panelX + 85, midY);
+
+                ctx.textAlign = 'right';
+                ctx.fillStyle = affordable ? '#ffd700' : '#e07a7a';
+                ctx.font = 'bold 20px Arial';
+                ctx.fillText('🪙 ' + item.cost, panelX + panelW - 40, midY);
+            }
+
+            // Selected item's description
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.font = '17px Arial';
+            ctx.fillText(SHOP_ITEMS[shopIndex].desc, cx, panelY + panelH - 78);
+
+            // Transient purchase message + footer hint
+            if (saveMessage && gameTime < saveMessageEndTime) {
+                ctx.fillStyle = '#8fe0c0';
+                ctx.font = 'bold 20px Arial';
+                ctx.fillText(saveMessage, cx, panelY + panelH - 50);
+            }
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.font = '18px Arial';
+            ctx.fillText('↑ / ↓ select   ·   Enter to buy   ·   Z to close', cx, panelY + panelH - 22);
+
+            ctx.restore();
+        }
+
         function gameLoop() {
             const now = performance.now();
             const dt = Math.min((now - lastTime) / 1000, 0.1);
@@ -4372,8 +5510,10 @@
             renderBackground();
 
             if (gameState === 'PLAYING') {
-                updateGame(dt);
+                if (!paused && !shopOpen && !talking) updateGame(dt);
                 renderGame();
+                if (paused) drawPauseOverlay();
+                else if (shopOpen) drawShopOverlay();
             } else if (gameState === 'EDITOR') {
                 renderEditor();
             }
@@ -4384,6 +5524,7 @@
         // Initialize
         initShaders();
         document.getElementById('highScore').textContent = highScore;
+        refreshContinueButton();
 
         // Hide player labels and P2 UI by default (single-player mode)
         document.querySelector('.player-label.p1').style.display = 'none';
