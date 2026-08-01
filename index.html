@@ -1948,7 +1948,7 @@
         function nearestEnemyInRange(x, y, list, range) {
             let best = null, bestDist = range * range;
             for (const e of list) {
-                if (e.x < -1000 || e.sleeping) continue;
+                if (e.x < -1000) continue; // skip removed/dead enemies (sleeping ones are fair game)
                 const d = (e.x - x) ** 2 + (e.y - y) ** 2;
                 if (d < bestDist) { bestDist = d; best = e; }
             }
