@@ -134,6 +134,12 @@
             box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
         }
 
+        .button-row {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+        }
+
         .button:hover {
             background: #0ff;
             box-shadow: 0 0 30px rgba(0, 255, 255, 0.8);
@@ -164,8 +170,8 @@
             mix-blend-mode: difference;
         }
 
-        /* Level Editor */
-        #editorScreen {
+        /* Level Editor and Bean Designer */
+        #editorScreen, #beanEditorScreen {
             position: absolute;
             top: 0;
             left: 0;
@@ -175,7 +181,7 @@
             pointer-events: none;
         }
 
-        #editorBar {
+        #editorBar, #beanEditorBar {
             pointer-events: auto;
             position: absolute;
             top: 0;
@@ -235,7 +241,7 @@
             margin: 0 4px;
         }
 
-        #edHint {
+        #edHint, #beanHint {
             pointer-events: none;
             position: absolute;
             bottom: 14px;
@@ -249,6 +255,30 @@
             padding: 6px 14px;
             border-radius: 6px;
             white-space: nowrap;
+        }
+
+        .bean-swatch {
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            border: 2px solid #0a0;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .bean-swatch.active {
+            border-color: #fff;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.9);
+        }
+
+        #beanColorInput {
+            width: 34px;
+            height: 30px;
+            padding: 0;
+            border: 2px solid #0a0;
+            border-radius: 4px;
+            background: #011a01;
+            cursor: pointer;
         }
 
         #customComplete {
@@ -305,7 +335,10 @@
             <p style="margin-top: 15px; font-size: 16px; opacity: 0.7;">High Score: <span id="highScore">0</span></p>
             <button class="button" id="continueButton" onclick="continueGame()" style="display:none;">CONTINUE</button>
             <button class="button" onclick="startGame()">START GAME</button>
-            <button class="button" onclick="openEditor()">MAKE YOUR OWN LEVEL</button>
+            <div class="button-row">
+                <button class="button" onclick="openEditor()">MAKE YOUR OWN LEVEL</button>
+                <button class="button" onclick="openBeanEditor()">DESIGN YOUR BEAN</button>
+            </div>
             <p style="margin-top: 20px; font-size: 14px; opacity: 0.6;">Written by Zeko Benson<br>Copyright © 2026</p>
             <p style="margin-top: 15px; font-size: 12px; opacity: 0.5;">Special Thanks:<br>Marc Benson, Simeon Statam, and Andrew Benson</p>
         </div>
@@ -367,6 +400,27 @@
                 <button class="ed-action" onclick="backToStartFromEditor()">⬅ Back</button>
             </div>
             <div id="edHint">Pick a tool, then click or drag to place many • Drag to draw platforms • ← → keys or scroll wheel to move</div>
+        </div>
+
+        <div id="beanEditorScreen" class="hidden">
+            <div id="beanEditorBar">
+                <button class="ed-action" id="beanPlayerButton" onclick="switchBeanEditorPlayer()">🎮 Player 1</button>
+                <span class="ed-sep"></span>
+                <button class="ed-tool" data-bean-tool="pen">✏️ Pen</button>
+                <button class="ed-tool" data-bean-tool="eraser">🧽 Eraser</button>
+                <button class="ed-tool" data-bean-tool="fill">🪣 Fill</button>
+                <button class="ed-tool" data-bean-tool="picker">💧 Pick Color</button>
+                <button class="ed-tool" id="beanMirrorButton" onclick="toggleBeanMirror()">🪞 Mirror</button>
+                <span class="ed-sep"></span>
+                <span id="beanPalette"></span>
+                <input type="color" id="beanColorInput" title="Any color">
+                <button class="ed-action" onclick="undoBeanEdit()">↩ Undo</button>
+                <button class="ed-action" onclick="resetBeanToClassic()">🌱 Classic</button>
+                <button class="ed-action" onclick="clearBeanDesign()">🧹 Blank</button>
+                <button class="ed-action" id="beanWearButton" onclick="toggleBeanWearing()">👕 Wear It: OFF</button>
+                <button class="ed-action" onclick="backToStartFromBeanEditor()">⬅ Back</button>
+            </div>
+            <div id="beanHint">Click or drag to paint • Your bean saves automatically</div>
         </div>
     </div>
 
@@ -451,12 +505,61 @@
         //   g.topY       - top edge of the body (local coords, y grows downward)
         //   g.bodyWidth  - body width      g.bodyHeight - body height
         //   g.size       - player size     g.eyeY - vertical center of the eyes
-        // The "None" item (threshold 0, draw null) is always first in each slot.
+        //   g.feet       - the two feet, back first: { x, y (center), radius }
+        // The "None" item (threshold 0, draw null) is always first in each slot, and items
+        // are listed in rising threshold order. Each slot's `layer` says when it is drawn:
+        //   'behind' - before the body       'body' - over the body (neckwear, shoes)
+        //   'head'   - on top of the head    'face' - over living eyes
+
+        // Traces a star path centered on (cx, cy); the caller fills it.
+        function traceStar(ctx, cx, cy, outerRadius, innerRadius, points) {
+            ctx.beginPath();
+            for (let i = 0; i < points * 2; i++) {
+                const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                const angle = -Math.PI / 2 + i * Math.PI / points;
+                const x = cx + Math.cos(angle) * radius;
+                const y = cy + Math.sin(angle) * radius;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+        }
+
+        // Traces a heart path of the given width centered on (cx, cy); the caller fills it.
+        function traceHeart(ctx, cx, cy, width) {
+            const half = width / 2;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy + half * 0.9);
+            ctx.bezierCurveTo(cx - half * 1.3, cy, cx - half * 0.6, cy - half * 1.1, cx, cy - half * 0.35);
+            ctx.bezierCurveTo(cx + half * 0.6, cy - half * 1.1, cx + half * 1.3, cy, cx, cy + half * 0.9);
+            ctx.closePath();
+        }
+
         const CLOTHING = {
             hat: {
                 label: 'Hat',
+                layer: 'head',
                 items: [
                     { name: 'None', threshold: 0, draw: null },
+                    {
+                        name: 'Baseball Cap', threshold: 250,
+                        draw: (ctx, g) => {
+                            const base = g.topY, r = g.bodyWidth * 0.55;
+                            ctx.fillStyle = '#b71c1c';
+                            ctx.beginPath();
+                            ctx.ellipse(r * 0.9, base - 1, r * 0.9, 3, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.fillStyle = '#d63031';
+                            ctx.beginPath();
+                            ctx.arc(0, base, r, Math.PI, Math.PI * 2);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillStyle = '#fff';
+                            ctx.beginPath();
+                            ctx.arc(0, base - r, 2, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    },
                     {
                         name: 'Beanie', threshold: 500,
                         draw: (ctx, g) => {
@@ -471,6 +574,38 @@
                             ctx.fillStyle = '#f5f5f5';
                             ctx.beginPath();
                             ctx.arc(0, base - r, 4, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    },
+                    {
+                        name: 'Propeller Cap', threshold: 1200,
+                        draw: (ctx, g) => {
+                            const base = g.topY, bw = g.bodyWidth, r = bw * 0.55;
+                            const wedgeColors = ['#e74c3c', '#f1c40f', '#3498db', '#2ecc71'];
+                            wedgeColors.forEach((color, i) => {
+                                ctx.fillStyle = color;
+                                ctx.beginPath();
+                                ctx.moveTo(0, base);
+                                ctx.arc(0, base, r, Math.PI + i * Math.PI / 4, Math.PI + (i + 1) * Math.PI / 4);
+                                ctx.closePath();
+                                ctx.fill();
+                            });
+                            const hubY = base - r - 6;
+                            ctx.fillStyle = '#555';
+                            ctx.fillRect(-1, hubY, 2, 6);
+                            // Spinning blades: the projected blade length swings through zero.
+                            const bladeReach = bw * 0.7 * Math.cos(gameTime / 40);
+                            ctx.fillStyle = '#e74c3c';
+                            ctx.beginPath();
+                            ctx.ellipse(bladeReach / 2, hubY, Math.abs(bladeReach) / 2 + 0.5, 2, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.fillStyle = '#3498db';
+                            ctx.beginPath();
+                            ctx.ellipse(-bladeReach / 2, hubY, Math.abs(bladeReach) / 2 + 0.5, 2, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.fillStyle = '#f1c40f';
+                            ctx.beginPath();
+                            ctx.arc(0, hubY, 2, 0, Math.PI * 2);
                             ctx.fill();
                         }
                     },
@@ -501,6 +636,30 @@
                         }
                     },
                     {
+                        name: 'Cowboy Hat', threshold: 2200,
+                        draw: (ctx, g) => {
+                            const base = g.topY, bw = g.bodyWidth, h = g.size * 0.45, cw = bw * 0.7;
+                            ctx.fillStyle = '#8b5a2b';
+                            ctx.beginPath();
+                            ctx.moveTo(-cw / 2, base);
+                            ctx.lineTo(-cw * 0.45, base - h);
+                            ctx.quadraticCurveTo(0, base - h * 0.75, cw * 0.45, base - h);
+                            ctx.lineTo(cw / 2, base);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillStyle = '#3e2410';
+                            ctx.fillRect(-cw / 2, base - h * 0.3, cw, 3);
+                            // Brim curls up at both ends
+                            const brimHalf = bw * 1.15;
+                            ctx.fillStyle = '#a0522d';
+                            ctx.beginPath();
+                            ctx.moveTo(-brimHalf, base - 5);
+                            ctx.quadraticCurveTo(0, base + 7, brimHalf, base - 5);
+                            ctx.quadraticCurveTo(0, base - 1, -brimHalf, base - 5);
+                            ctx.fill();
+                        }
+                    },
+                    {
                         name: 'Top Hat', threshold: 3000,
                         draw: (ctx, g) => {
                             const base = g.topY, bw = g.bodyWidth, h = g.size * 0.9, cw = bw * 0.8;
@@ -511,6 +670,56 @@
                             ctx.fillRect(-cw / 2, base - h, cw, h);
                             ctx.fillStyle = '#c0392b';
                             ctx.fillRect(-cw / 2, base - h * 0.3, cw, 5);
+                        }
+                    },
+                    {
+                        name: 'Wizard Hat', threshold: 3500,
+                        draw: (ctx, g) => {
+                            const base = g.topY, bw = g.bodyWidth, h = g.size * 1.1;
+                            ctx.fillStyle = '#5b2c8f';
+                            ctx.beginPath();
+                            ctx.ellipse(0, base, bw * 0.95, 4, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.fillStyle = '#6c3483';
+                            ctx.beginPath();
+                            ctx.moveTo(-bw * 0.5, base);
+                            ctx.quadraticCurveTo(-bw * 0.1, base - h * 0.6, bw * 0.35, base - h);
+                            ctx.quadraticCurveTo(bw * 0.1, base - h * 0.5, bw * 0.5, base);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillStyle = '#f7dc6f';
+                            traceStar(ctx, -bw * 0.12, base - h * 0.28, 3.5, 1.5, 5);
+                            ctx.fill();
+                            traceStar(ctx, bw * 0.12, base - h * 0.55, 2.5, 1, 5);
+                            ctx.fill();
+                        }
+                    },
+                    {
+                        name: 'Viking Helmet', threshold: 5000,
+                        draw: (ctx, g) => {
+                            const base = g.topY, r = g.bodyWidth * 0.62;
+                            ctx.fillStyle = '#f5f0e1';
+                            for (const side of [-1, 1]) {
+                                ctx.beginPath();
+                                ctx.moveTo(side * r * 0.8, base - r * 0.45);
+                                ctx.quadraticCurveTo(side * r * 1.7, base - r * 0.6, side * r * 1.5, base - r * 1.6);
+                                ctx.quadraticCurveTo(side * r * 1.25, base - r * 0.9, side * r * 0.6, base - r * 0.8);
+                                ctx.closePath();
+                                ctx.fill();
+                            }
+                            ctx.fillStyle = '#8e9aa6';
+                            ctx.beginPath();
+                            ctx.arc(0, base, r, Math.PI, Math.PI * 2);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillStyle = '#6c7a89';
+                            ctx.fillRect(-r, base - 4, r * 2, 4);
+                            ctx.fillStyle = '#d5dbe0';
+                            for (const rivetX of [-r * 0.6, 0, r * 0.6]) {
+                                ctx.beginPath();
+                                ctx.arc(rivetX, base - 2, 1.2, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
                         }
                     },
                     {
@@ -540,13 +749,45 @@
                                 ctx.fill();
                             }
                         }
+                    },
+                    {
+                        name: 'Halo', threshold: 8000,
+                        draw: (ctx, g) => {
+                            const haloY = g.topY - g.size * 0.35 + Math.sin(gameTime / 400) * 2;
+                            ctx.save();
+                            ctx.shadowColor = '#fff4a3';
+                            ctx.shadowBlur = 10;
+                            ctx.strokeStyle = '#f7dc6f';
+                            ctx.lineWidth = 3;
+                            ctx.beginPath();
+                            ctx.ellipse(0, haloY, g.bodyWidth * 0.6, 4, 0, 0, Math.PI * 2);
+                            ctx.stroke();
+                            ctx.restore();
+                        }
                     }
                 ]
             },
             eyewear: {
                 label: 'Eyewear',
+                layer: 'face',
                 items: [
                     { name: 'None', threshold: 0, draw: null },
+                    {
+                        name: 'Eye Patch', threshold: 700,
+                        draw: (ctx, g) => {
+                            const eyeY = g.eyeY;
+                            ctx.strokeStyle = '#111';
+                            ctx.lineWidth = 1.5;
+                            ctx.beginPath();
+                            ctx.moveTo(-13, eyeY - 8);
+                            ctx.lineTo(14, eyeY - 2);
+                            ctx.stroke();
+                            ctx.fillStyle = '#111';
+                            ctx.beginPath();
+                            ctx.ellipse(8, eyeY, 6, 6, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    },
                     {
                         name: 'Sunglasses', threshold: 1000,
                         draw: (ctx, g) => {
@@ -560,6 +801,24 @@
                             ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
                             ctx.fillRect(-12, eyeY - 4, 3, 2);
                             ctx.fillRect(5, eyeY - 4, 3, 2);
+                        }
+                    },
+                    {
+                        name: 'Monocle', threshold: 1800,
+                        draw: (ctx, g) => {
+                            const eyeY = g.eyeY;
+                            ctx.fillStyle = 'rgba(200, 230, 255, 0.25)';
+                            ctx.beginPath();
+                            ctx.arc(8, eyeY, 6.5, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.strokeStyle = '#d4ac0d';
+                            ctx.lineWidth = 1.5;
+                            ctx.stroke();
+                            ctx.lineWidth = 1;
+                            ctx.beginPath();
+                            ctx.moveTo(13, eyeY + 4);
+                            ctx.quadraticCurveTo(15, eyeY + 16, 9, eyeY + 22);
+                            ctx.stroke();
                         }
                     },
                     {
@@ -581,6 +840,22 @@
                         }
                     },
                     {
+                        name: 'Star Glasses', threshold: 3200,
+                        draw: (ctx, g) => {
+                            const eyeY = g.eyeY;
+                            ctx.fillStyle = '#ff4fa3';
+                            ctx.fillRect(-3, eyeY - 1, 6, 2);
+                            for (const eyeX of [-8, 8]) {
+                                ctx.fillStyle = '#ff4fa3';
+                                traceStar(ctx, eyeX, eyeY, 8, 4, 5);
+                                ctx.fill();
+                                ctx.fillStyle = 'rgba(255, 230, 120, 0.85)';
+                                traceStar(ctx, eyeX, eyeY, 5, 2.5, 5);
+                                ctx.fill();
+                            }
+                        }
+                    },
+                    {
                         name: '3D Glasses', threshold: 4500,
                         draw: (ctx, g) => {
                             const eyeY = g.eyeY;
@@ -591,11 +866,143 @@
                             ctx.fillStyle = '#39f';
                             ctx.fillRect(3, eyeY - 4, 11, 9);
                         }
+                    },
+                    {
+                        name: 'Heart Glasses', threshold: 5500,
+                        draw: (ctx, g) => {
+                            const eyeY = g.eyeY;
+                            ctx.fillStyle = '#c0392b';
+                            ctx.fillRect(-3, eyeY - 2, 6, 2);
+                            for (const eyeX of [-8, 8]) {
+                                ctx.fillStyle = '#e74c3c';
+                                traceHeart(ctx, eyeX, eyeY, 13);
+                                ctx.fill();
+                                ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+                                ctx.fillRect(eyeX - 4, eyeY - 3, 2, 2);
+                            }
+                        }
+                    },
+                    {
+                        name: 'Laser Visor', threshold: 7000,
+                        draw: (ctx, g) => {
+                            const eyeY = g.eyeY;
+                            const glow = 0.7 + Math.sin(gameTime / 120) * 0.3;
+                            ctx.fillStyle = '#2c2c2c';
+                            ctx.fillRect(-16, eyeY - 5, 32, 10);
+                            ctx.fillStyle = `rgba(255, 23, 68, ${glow})`;
+                            ctx.fillRect(-14, eyeY - 3, 28, 6);
+                            // Bright scan dot sweeping across the lens
+                            const scanX = -13 + (gameTime / 8) % 26;
+                            ctx.fillStyle = '#fff';
+                            ctx.fillRect(scanX, eyeY - 2, 3, 4);
+                        }
+                    }
+                ]
+            },
+            neck: {
+                label: 'Neckwear',
+                layer: 'body',
+                items: [
+                    { name: 'None', threshold: 0, draw: null },
+                    {
+                        name: 'Bow Tie', threshold: 400,
+                        draw: (ctx, g) => {
+                            const y = g.eyeY + g.size * 0.35, w = g.size * 0.22;
+                            ctx.fillStyle = '#c0392b';
+                            ctx.beginPath();
+                            ctx.moveTo(0, y);
+                            ctx.lineTo(-w, y - w * 0.6);
+                            ctx.lineTo(-w, y + w * 0.6);
+                            ctx.closePath();
+                            ctx.moveTo(0, y);
+                            ctx.lineTo(w, y - w * 0.6);
+                            ctx.lineTo(w, y + w * 0.6);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillStyle = '#922b21';
+                            ctx.fillRect(-2, y - 2.5, 4, 5);
+                        }
+                    },
+                    {
+                        name: 'Scarf', threshold: 1300,
+                        draw: (ctx, g) => {
+                            const y = g.eyeY + g.size * 0.3, bw = g.bodyWidth, tailLength = g.size * 0.5;
+                            const sway = Math.sin(gameTime / 250) * 3;
+                            ctx.fillStyle = '#e67e22';
+                            ctx.beginPath();
+                            ctx.moveTo(-bw * 0.35, y + 2);
+                            ctx.lineTo(-bw * 0.1, y + 2);
+                            ctx.lineTo(-bw * 0.05 + sway, y + tailLength);
+                            ctx.lineTo(-bw * 0.3 + sway, y + tailLength);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillRect(-bw * 0.55, y - 3, bw * 1.1, 7);
+                            ctx.fillStyle = '#fff5e6';
+                            for (let i = 0; i < 4; i++) {
+                                ctx.fillRect(-bw * 0.45 + i * bw * 0.3, y - 3, 2, 7);
+                            }
+                            ctx.fillRect(-bw * 0.3 + sway * 0.6, y + tailLength * 0.6, bw * 0.25, 2);
+                        }
+                    },
+                    {
+                        name: 'Necktie', threshold: 2800,
+                        draw: (ctx, g) => {
+                            const y = g.eyeY + g.size * 0.3, len = g.size * 0.8, w = g.size * 0.09;
+                            ctx.fillStyle = '#1f4e8c';
+                            ctx.beginPath();
+                            ctx.moveTo(-w, y - 2);
+                            ctx.lineTo(w, y - 2);
+                            ctx.lineTo(w * 0.6, y + 3);
+                            ctx.lineTo(-w * 0.6, y + 3);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillStyle = '#2e6fc0';
+                            ctx.beginPath();
+                            ctx.moveTo(-w * 0.6, y + 3);
+                            ctx.lineTo(w * 0.6, y + 3);
+                            ctx.lineTo(w * 1.3, y + len * 0.85);
+                            ctx.lineTo(0, y + len);
+                            ctx.lineTo(-w * 1.3, y + len * 0.85);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.strokeStyle = '#f1c40f';
+                            ctx.lineWidth = 1.5;
+                            ctx.beginPath();
+                            ctx.moveTo(-w, y + len * 0.35);
+                            ctx.lineTo(w, y + len * 0.28);
+                            ctx.moveTo(-w * 1.1, y + len * 0.6);
+                            ctx.lineTo(w * 1.1, y + len * 0.53);
+                            ctx.stroke();
+                        }
+                    },
+                    {
+                        name: 'Gold Chain', threshold: 3800,
+                        draw: (ctx, g) => {
+                            const y = g.eyeY + g.size * 0.28, bw = g.bodyWidth;
+                            ctx.strokeStyle = '#f1c40f';
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.moveTo(-bw * 0.45, y);
+                            ctx.quadraticCurveTo(0, y + g.size * 0.45, bw * 0.45, y);
+                            ctx.stroke();
+                            ctx.fillStyle = '#f7dc6f';
+                            ctx.beginPath();
+                            ctx.arc(0, y + g.size * 0.23, 4.5, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.strokeStyle = '#b7950b';
+                            ctx.lineWidth = 1;
+                            ctx.stroke();
+                            ctx.fillStyle = '#d4ac0d';
+                            ctx.beginPath();
+                            ctx.arc(0, y + g.size * 0.23, 2, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
                     }
                 ]
             },
             cape: {
-                label: 'Cape',
+                label: 'Back',
+                layer: 'behind',
                 items: [
                     { name: 'None', threshold: 0, draw: null },
                     {
@@ -635,15 +1042,287 @@
                             ctx.fillStyle = '#5dade2';
                             ctx.fillRect(-bw * 0.5, topY + size * 0.1, bw, size * 0.16);
                         }
+                    },
+                    {
+                        name: 'Jetpack', threshold: 4200,
+                        draw: (ctx, g) => {
+                            const topY = g.topY, bw = g.bodyWidth, size = g.size;
+                            const tankWidth = size * 0.22, tankTop = topY + size * 0.45, tankHeight = size * 0.8;
+                            const flameLength = size * 0.3 * (0.75 + Math.sin(gameTime / 35) * 0.25);
+                            for (const side of [-1, 1]) {
+                                const tankX = side * (bw * 0.5 + tankWidth * 0.35) - tankWidth / 2;
+                                const nozzleX = tankX + tankWidth / 2;
+                                const nozzleY = tankTop + tankHeight;
+                                ctx.fillStyle = '#f39c12';
+                                ctx.beginPath();
+                                ctx.moveTo(nozzleX - tankWidth * 0.35, nozzleY);
+                                ctx.lineTo(nozzleX + tankWidth * 0.35, nozzleY);
+                                ctx.lineTo(nozzleX, nozzleY + flameLength);
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.fillStyle = '#fff3b0';
+                                ctx.beginPath();
+                                ctx.moveTo(nozzleX - tankWidth * 0.18, nozzleY);
+                                ctx.lineTo(nozzleX + tankWidth * 0.18, nozzleY);
+                                ctx.lineTo(nozzleX, nozzleY + flameLength * 0.55);
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.fillStyle = '#95a5a6';
+                                ctx.fillRect(tankX, tankTop, tankWidth, tankHeight);
+                                ctx.fillStyle = '#c0392b';
+                                ctx.fillRect(tankX, tankTop, tankWidth, 3);
+                                ctx.fillStyle = '#566573';
+                                ctx.fillRect(tankX + tankWidth * 0.2, nozzleY - 2, tankWidth * 0.6, 3);
+                            }
+                        }
+                    },
+                    {
+                        name: 'Vampire Cape', threshold: 5200,
+                        draw: (ctx, g) => {
+                            const topY = g.topY, bw = g.bodyWidth, bh = g.bodyHeight, size = g.size;
+                            const sway = Math.sin(gameTime / 320) * 4;
+                            // Tall pointed collar behind the head
+                            for (const side of [-1, 1]) {
+                                ctx.fillStyle = '#1a1a1a';
+                                ctx.beginPath();
+                                ctx.moveTo(side * bw * 0.3, topY + size * 0.3);
+                                ctx.lineTo(side * bw * 1.0, topY - size * 0.2);
+                                ctx.lineTo(side * bw * 0.55, topY + size * 0.05);
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.fillStyle = '#8e0e1f';
+                                ctx.beginPath();
+                                ctx.moveTo(side * bw * 0.4, topY + size * 0.22);
+                                ctx.lineTo(side * bw * 0.88, topY - size * 0.1);
+                                ctx.lineTo(side * bw * 0.55, topY + size * 0.08);
+                                ctx.closePath();
+                                ctx.fill();
+                            }
+                            const traceCape = (spread) => {
+                                ctx.beginPath();
+                                ctx.moveTo(-bw * 0.5, topY + size * 0.2);
+                                ctx.lineTo(bw * 0.5, topY + size * 0.2);
+                                ctx.lineTo(bw * spread + sway, topY + bh);
+                                ctx.lineTo(bw * 0.5 + sway, topY + bh * 0.93);
+                                ctx.lineTo(sway, topY + bh);
+                                ctx.lineTo(-bw * 0.5 + sway, topY + bh * 0.93);
+                                ctx.lineTo(-bw * spread + sway, topY + bh);
+                                ctx.closePath();
+                            };
+                            ctx.fillStyle = '#8e0e1f';
+                            traceCape(1.05);
+                            ctx.fill();
+                            ctx.fillStyle = '#1a1a1a';
+                            traceCape(0.92);
+                            ctx.fill();
+                        }
+                    },
+                    {
+                        name: 'Royal Robe', threshold: 6500,
+                        draw: (ctx, g) => {
+                            const topY = g.topY, bw = g.bodyWidth, bh = g.bodyHeight, size = g.size;
+                            const sway = Math.sin(gameTime / 300) * 4;
+                            ctx.fillStyle = '#6c3483';
+                            ctx.beginPath();
+                            ctx.moveTo(-bw * 0.5, topY + size * 0.18);
+                            ctx.lineTo(bw * 0.5, topY + size * 0.18);
+                            ctx.lineTo(bw * 0.95 + sway, topY + bh);
+                            ctx.lineTo(-bw * 0.95 + sway, topY + bh);
+                            ctx.closePath();
+                            ctx.fill();
+                            // Ermine trim: white fur with black tail spots, along the hem and collar
+                            const hemTop = topY + bh * 0.9;
+                            ctx.fillStyle = '#fdfefe';
+                            ctx.beginPath();
+                            ctx.moveTo(-bw * 0.9 + sway, hemTop);
+                            ctx.lineTo(bw * 0.9 + sway, hemTop);
+                            ctx.lineTo(bw * 0.95 + sway, topY + bh);
+                            ctx.lineTo(-bw * 0.95 + sway, topY + bh);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.fillRect(-bw * 0.6, topY + size * 0.1, bw * 1.2, size * 0.18);
+                            ctx.fillStyle = '#111';
+                            for (let i = 0; i < 5; i++) {
+                                ctx.fillRect(-bw * 0.8 + sway + i * bw * 0.4, hemTop + 2, 1.5, 3);
+                            }
+                            for (const spotX of [-bw * 0.45, 0, bw * 0.45]) {
+                                ctx.fillRect(spotX, topY + size * 0.15, 1.5, 3);
+                            }
+                        }
+                    },
+                    {
+                        name: 'Rainbow Cape', threshold: 7500,
+                        draw: (ctx, g) => {
+                            const topY = g.topY, bw = g.bodyWidth, bh = g.bodyHeight, size = g.size;
+                            const sway = Math.sin(gameTime / 260) * 6;
+                            const stripeColors = ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db', '#9b59b6'];
+                            const capeTop = topY + size * 0.18, capeBottom = topY + bh * 1.02;
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.moveTo(-bw * 0.45, capeTop);
+                            ctx.lineTo(bw * 0.45, capeTop);
+                            ctx.lineTo(bw * 0.9 + sway, capeBottom);
+                            ctx.lineTo(-bw * 0.9 + sway, capeBottom);
+                            ctx.closePath();
+                            ctx.clip();
+                            const stripeHeight = (capeBottom - capeTop) / stripeColors.length;
+                            stripeColors.forEach((color, i) => {
+                                ctx.fillStyle = color;
+                                ctx.fillRect(-bw * 1.5, capeTop + i * stripeHeight, bw * 3, stripeHeight + 0.5);
+                            });
+                            ctx.restore();
+                        }
+                    },
+                    {
+                        name: 'Angel Wings', threshold: 9000,
+                        draw: (ctx, g) => {
+                            const size = g.size, flap = Math.sin(gameTime / 180) * 0.25;
+                            for (const side of [-1, 1]) {
+                                ctx.save();
+                                ctx.translate(side * g.bodyWidth * 0.3, g.topY + size * 1.0);
+                                ctx.rotate(side * (-0.35 - flap));
+                                for (let i = 0; i < 3; i++) {
+                                    ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#e8f0ff';
+                                    ctx.strokeStyle = '#cfd8e6';
+                                    ctx.lineWidth = 1;
+                                    ctx.beginPath();
+                                    ctx.ellipse(side * size * (0.45 - i * 0.04), i * size * 0.16,
+                                        size * (0.45 - i * 0.08), size * 0.12, 0, 0, Math.PI * 2);
+                                    ctx.fill();
+                                    ctx.stroke();
+                                }
+                                ctx.restore();
+                            }
+                        }
+                    }
+                ]
+            },
+            shoes: {
+                label: 'Shoes',
+                layer: 'body',
+                items: [
+                    { name: 'None', threshold: 0, draw: null },
+                    {
+                        name: 'Sneakers', threshold: 150,
+                        draw: (ctx, g) => {
+                            const w = g.bodyWidth * 0.5, h = g.size * 0.16;
+                            for (const foot of g.feet) {
+                                const shoeX = foot.x, feetY = foot.y + foot.radius;
+                                ctx.fillStyle = '#e74c3c';
+                                ctx.beginPath();
+                                ctx.moveTo(shoeX - w / 2, feetY);
+                                ctx.lineTo(shoeX - w / 2, feetY - h);
+                                ctx.lineTo(shoeX + w * 0.2, feetY - h);
+                                ctx.quadraticCurveTo(shoeX + w * 0.75, feetY - h, shoeX + w * 0.75, feetY);
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.fillStyle = '#fff';
+                                ctx.fillRect(shoeX - w / 2, feetY - 2.5, w * 1.25, 2.5);
+                                ctx.fillRect(shoeX - w * 0.1, feetY - h + 1.5, w * 0.3, 1.2);
+                            }
+                        }
+                    },
+                    {
+                        name: 'Bunny Slippers', threshold: 1600,
+                        draw: (ctx, g) => {
+                            const w = g.bodyWidth * 0.5, h = g.size * 0.15;
+                            for (const foot of g.feet) {
+                                const shoeX = foot.x, feetY = foot.y + foot.radius;
+                                ctx.fillStyle = '#f8c8dc';
+                                ctx.beginPath();
+                                ctx.ellipse(shoeX - w * 0.1, feetY - h - 3, 1.6, 4, -0.3, 0, Math.PI * 2);
+                                ctx.ellipse(shoeX + w * 0.12, feetY - h - 3, 1.6, 4, 0.3, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.beginPath();
+                                ctx.ellipse(shoeX + w * 0.1, feetY - h / 2, w * 0.62, h / 2, 0, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.fillStyle = '#222';
+                                ctx.beginPath();
+                                ctx.arc(shoeX + w * 0.4, feetY - h * 0.6, 1, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.fillStyle = '#f78fb3';
+                                ctx.beginPath();
+                                ctx.arc(shoeX + w * 0.62, feetY - h * 0.45, 1.2, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        }
+                    },
+                    {
+                        name: 'Cowboy Boots', threshold: 2400,
+                        draw: (ctx, g) => {
+                            const w = g.bodyWidth * 0.5, h = g.size * 0.32;
+                            for (const foot of g.feet) {
+                                const shoeX = foot.x, feetY = foot.y + foot.radius;
+                                ctx.fillStyle = '#7b4a26';
+                                ctx.beginPath();
+                                ctx.moveTo(shoeX - w / 2, feetY);
+                                ctx.lineTo(shoeX - w / 2, feetY - h);
+                                ctx.lineTo(shoeX + w * 0.35, feetY - h);
+                                ctx.lineTo(shoeX + w * 0.35, feetY - h * 0.35);
+                                ctx.quadraticCurveTo(shoeX + w * 0.85, feetY - h * 0.3, shoeX + w * 0.8, feetY);
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.fillStyle = '#5a3218';
+                                ctx.fillRect(shoeX - w / 2, feetY - h, w * 0.85, 2.5);
+                                ctx.fillStyle = '#3b2010';
+                                ctx.fillRect(shoeX - w / 2, feetY - 2, w * 0.3, 2);
+                                ctx.fillStyle = '#f1c40f';
+                                traceStar(ctx, shoeX - w * 0.05, feetY - h * 0.6, 2.5, 1, 5);
+                                ctx.fill();
+                            }
+                        }
+                    },
+                    {
+                        name: 'Rocket Boots', threshold: 6800,
+                        draw: (ctx, g) => {
+                            const w = g.bodyWidth * 0.5, h = g.size * 0.22;
+                            const flameLength = g.size * 0.2 * (0.7 + Math.sin(gameTime / 30) * 0.3);
+                            for (const foot of g.feet) {
+                                const shoeX = foot.x, feetY = foot.y + foot.radius;
+                                ctx.fillStyle = '#f39c12';
+                                ctx.beginPath();
+                                ctx.moveTo(shoeX - w * 0.3, feetY);
+                                ctx.lineTo(shoeX + w * 0.3, feetY);
+                                ctx.lineTo(shoeX, feetY + flameLength);
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.fillStyle = '#fff3b0';
+                                ctx.beginPath();
+                                ctx.moveTo(shoeX - w * 0.15, feetY);
+                                ctx.lineTo(shoeX + w * 0.15, feetY);
+                                ctx.lineTo(shoeX, feetY + flameLength * 0.55);
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.fillStyle = '#bdc3c7';
+                                ctx.beginPath();
+                                ctx.moveTo(shoeX - w / 2, feetY);
+                                ctx.lineTo(shoeX - w / 2, feetY - h);
+                                ctx.lineTo(shoeX + w * 0.25, feetY - h);
+                                ctx.quadraticCurveTo(shoeX + w * 0.7, feetY - h * 0.5, shoeX + w * 0.7, feetY);
+                                ctx.closePath();
+                                ctx.fill();
+                                ctx.fillStyle = '#e74c3c';
+                                ctx.fillRect(shoeX - w / 2, feetY - h * 0.6, w * 1.05, 2.5);
+                            }
+                        }
                     }
                 ]
             }
         };
-        const CLOTHING_SLOTS = ['hat', 'eyewear', 'cape'];
+        // Wardrobe order, top to bottom.
+        const CLOTHING_SLOTS = Object.keys(CLOTHING);
 
-        // Player's manual wardrobe picks. undefined for a slot means "auto" (wear the
-        // highest unlocked item); a number is an explicit item index within that slot.
-        let manualChoice = { hat: undefined, eyewear: undefined, cape: undefined };
+        // Draws the equipped item of every slot on the given layer.
+        function drawClothingLayer(ctx, layer, geo) {
+            for (const slotKey of CLOTHING_SLOTS.filter(key => CLOTHING[key].layer === layer)) {
+                const item = equippedItem(slotKey);
+                if (item.draw) item.draw(ctx, geo);
+            }
+        }
+
+        // Player's manual wardrobe picks, keyed by slot. A missing slot means "auto" (wear
+        // the highest unlocked item); a number is an explicit item index within that slot.
+        let manualChoice = {};
         let wardrobeSlot = 0;              // which slot the pause wardrobe is editing
         let lastUnlockThreshold = 0;       // highest clothing milestone already announced
 
@@ -694,7 +1373,7 @@
 
         // Clear all wardrobe picks back to auto (used when a fresh run starts).
         function resetWardrobe() {
-            manualChoice = { hat: undefined, eyewear: undefined, cape: undefined };
+            manualChoice = {};
             wardrobeSlot = 0;
             lastUnlockThreshold = 0;
         }
@@ -1481,6 +2160,59 @@
         }
 
         // Game Objects
+        // Classic look of each player's bean: body and face band colors, plus the shaded
+        // feet and shine used when the Bean Designer turns that look into art pixels.
+        const PLAYER_BEAN_COLORS = [
+            { body: '#2d5016', highlight: '#6fb33f', shadow: '#23400f', shine: '#a8dc80' },
+            { body: '#3a1a6b', highlight: '#8b5fcf', shadow: '#2a1250', shine: '#c3a6f0' }
+        ];
+
+        // Every bean stands on two round "o" feet; its body rests on the feet's centers.
+        // Sizes are fractions of the player size so Big Boy and previews scale with them.
+        const BEAN_FOOT_RADIUS_RATIO = 0.16;
+        const BEAN_STRIDE_RATIO = 0.15;
+        const BEAN_STEP_LIFT_RATIO = 0.14;
+        // Ground distance covered per radian of the walk cycle. Longer than the stride so
+        // the legs stay readable at running speed instead of blurring.
+        const BEAN_WALK_DISTANCE_PER_RADIAN_RATIO = 0.7;
+
+        // Where each foot is, back foot first, in the bean's facing-right local space, for a
+        // bean touching the ground at groundY. walkPhase advances with distance walked,
+        // walkAmount (0..1) blends from standing to a full stride, and airAmount (0..1)
+        // blends into the jumping pose (front foot forward and raised).
+        function beanFeet(size, bodyWidth, groundY, walkPhase, walkAmount, airAmount) {
+            const radius = size * BEAN_FOOT_RADIUS_RATIO;
+            const stride = size * BEAN_STRIDE_RATIO;
+            const lift = size * BEAN_STEP_LIFT_RATIO;
+            return [-1, 1].map(side => {
+                const phase = walkPhase + (side > 0 ? 0 : Math.PI);
+                // A foot swinging forward is lifted; a planted foot slides back along the ground.
+                const walkX = Math.sin(phase) * stride * walkAmount;
+                const walkLift = Math.max(0, Math.cos(phase)) * lift * walkAmount;
+                const airX = side * stride * 0.6 * airAmount;
+                const airLift = (side > 0 ? lift : lift * 0.3) * airAmount;
+                return {
+                    x: side * bodyWidth * 0.28 + walkX + airX,
+                    y: groundY - radius - walkLift - airLift,
+                    radius
+                };
+            });
+        }
+
+        // Draws feet from beanFeet() as rings, like the letter "o".
+        function drawBeanFeet(ctx, feet, playerIndex) {
+            const colors = PLAYER_BEAN_COLORS[playerIndex];
+            for (const foot of feet) {
+                ctx.fillStyle = colors.highlight;
+                ctx.strokeStyle = colors.shadow;
+                ctx.lineWidth = foot.radius * 0.45;
+                ctx.beginPath();
+                ctx.arc(foot.x, foot.y, foot.radius - ctx.lineWidth / 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            }
+        }
+
         class Player {
             constructor(playerIndex, startX) {
                 this.playerIndex = playerIndex;
@@ -1499,6 +2231,9 @@
                 this.jumpHeld = false;  // true while a jump button is held (for variable height)
                 this.crouching = false; // true while a crouch button is held (S / Down)
                 this.crouchAmount = 0;  // eased 0..1 squash factor for smooth crouch animation
+                this.walkPhase = 0;     // walk cycle angle, advanced by ground distance covered
+                this.walkAmount = 0;    // eased 0..1 blend from standing feet to a full stride
+                this.airAmount = 0;     // eased 0..1 blend into the jumping foot pose
 
                 // Per-player state
                 this.health = 3;
@@ -1517,14 +2252,8 @@
                     magnet: 0
                 };
 
-                // Player-specific colors
-                if (playerIndex === 0) {
-                    this.bodyColor = '#2d5016';
-                    this.highlightColor = '#6fb33f';
-                } else {
-                    this.bodyColor = '#3a1a6b';
-                    this.highlightColor = '#8b5fcf';
-                }
+                this.bodyColor = PLAYER_BEAN_COLORS[playerIndex].body;
+                this.highlightColor = PLAYER_BEAN_COLORS[playerIndex].highlight;
             }
 
             // Attempt a jump. A ground/coyote jump keeps double-jumps; otherwise
@@ -1611,6 +2340,15 @@
                 // Ease the crouch squash toward its target (only crouch while grounded)
                 const crouchTarget = (this.crouching && this.onGround) ? 1 : 0;
                 this.crouchAmount += (crouchTarget - this.crouchAmount) * Math.min(1, dt * 15);
+
+                // Walk cycle: the phase advances with ground distance covered, so faster
+                // movement means faster steps. In the air the feet tuck into a jump pose.
+                const walkTarget = (this.onGround && Math.abs(this.vx) > 0.3) ? 1 : 0;
+                this.walkAmount += (walkTarget - this.walkAmount) * Math.min(1, dt * 12);
+                this.airAmount += ((this.onGround ? 0 : 1) - this.airAmount) * Math.min(1, dt * 12);
+                if (this.onGround) {
+                    this.walkPhase += Math.abs(this.vx) * dt * 60 / (this.size * BEAN_WALK_DISTANCE_PER_RADIAN_RATIO);
+                }
 
                 // Bob animation
                 this.bobPhase += dt * 5;
@@ -1793,47 +2531,56 @@
                 const widthScale = 1 + 0.35 * this.crouchAmount;
                 const bodyWidth = this.size * bodyScale * 0.6 * widthScale;
                 const bodyHeight = this.size * 2.0 * bodyScale * heightScale;
-                // Anchor the body's bottom to the feet (collision-box bottom) so extra
-                // height grows upward instead of sinking through the floor.
-                const topY = this.size - bodyHeight + bob;
+                // Feet touch the collision-box bottom; the body rests on them, so extra height
+                // grows upward instead of sinking through the floor. Mid-step, the body rises.
+                const feet = beanFeet(this.size, bodyWidth, this.size, this.walkPhase, this.walkAmount, this.airAmount);
+                const stepBounce = -Math.abs(Math.cos(this.walkPhase)) * this.size * 0.05 * this.walkAmount;
+                const topY = this.size - this.size * BEAN_FOOT_RADIUS_RATIO - bodyHeight + bob + stepBounce;
                 // Keep the face near the top of the body (15px below the top at base size).
                 const eyeY = topY + this.size * 0.375 * heightScale;
 
                 // Shared geometry passed to every clothing item's draw function.
-                const clothingGeo = { topY, bodyWidth, bodyHeight, size: this.size, eyeY };
+                const clothingGeo = { topY, bodyWidth, bodyHeight, size: this.size, eyeY, feet };
 
-                // Cape sits behind the body, so draw it first.
-                const capeItem = equippedItem('cape');
-                if (capeItem.draw) capeItem.draw(ctx, clothingGeo);
+                drawClothingLayer(ctx, 'behind', clothingGeo);
 
-                // Base color
-                ctx.fillStyle = this.bodyColor;
-                ctx.fillRect(-bodyWidth/2, topY, bodyWidth, bodyHeight);
+                // A player may wear a hand-painted design (with its own face) from the Bean Designer.
+                const wearsBeanDesign = beanDesigns[this.playerIndex].wearing;
+                if (wearsBeanDesign) {
+                    drawBeanDesign(ctx, this.playerIndex, topY, bodyWidth, bodyHeight);
+                } else {
+                    // Base color
+                    ctx.fillStyle = this.bodyColor;
+                    ctx.fillRect(-bodyWidth/2, topY, bodyWidth, bodyHeight);
 
-                // Vertical lighting: bright top, shaded bottom (reads as a rounded, lit surface)
-                const lightGrad = ctx.createLinearGradient(0, topY, 0, topY + bodyHeight);
-                lightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
-                lightGrad.addColorStop(0.3, 'rgba(255, 255, 255, 0)');
-                lightGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
-                lightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.38)');
-                ctx.fillStyle = lightGrad;
-                ctx.fillRect(-bodyWidth/2, topY, bodyWidth, bodyHeight);
+                    // Vertical lighting: bright top, shaded bottom (reads as a rounded, lit surface)
+                    const lightGrad = ctx.createLinearGradient(0, topY, 0, topY + bodyHeight);
+                    lightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+                    lightGrad.addColorStop(0.3, 'rgba(255, 255, 255, 0)');
+                    lightGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
+                    lightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.38)');
+                    ctx.fillStyle = lightGrad;
+                    ctx.fillRect(-bodyWidth/2, topY, bodyWidth, bodyHeight);
 
-                // Colored face band
-                ctx.fillStyle = this.highlightColor;
-                ctx.fillRect(-bodyWidth/2, topY, bodyWidth, this.size * 0.3);
+                    // Colored face band
+                    ctx.fillStyle = this.highlightColor;
+                    ctx.fillRect(-bodyWidth/2, topY, bodyWidth, this.size * 0.3);
 
-                // Glossy specular highlight near the top-left
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
-                ctx.beginPath();
-                ctx.ellipse(-bodyWidth * 0.16, topY + this.size * 0.15, bodyWidth * 0.26, this.size * 0.15, 0, 0, Math.PI * 2);
-                ctx.fill();
+                    // Glossy specular highlight near the top-left
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+                    ctx.beginPath();
+                    ctx.ellipse(-bodyWidth * 0.16, topY + this.size * 0.15, bodyWidth * 0.26, this.size * 0.15, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
-                // Cosmetic hat (chosen in the wardrobe, or highest unlocked), on the head.
-                const hatItem = equippedItem('hat');
-                if (hatItem.draw) hatItem.draw(ctx, clothingGeo);
+                drawBeanFeet(ctx, feet, this.playerIndex);
+                drawClothingLayer(ctx, 'body', clothingGeo);
+                drawClothingLayer(ctx, 'head', clothingGeo);
 
-                if (this.dead) {
+                if (wearsBeanDesign) {
+                    // The painted face stays as drawn; a dead bean still shows as a faded ghost.
+                    if (!this.dead) drawClothingLayer(ctx, 'face', clothingGeo);
+                } else if (this.dead) {
                     // X eyes for dead player
                     ctx.strokeStyle = '#fff';
                     ctx.lineWidth = 3;
@@ -1862,9 +2609,7 @@
                         ctx.fill();
                     }
 
-                    // Eyewear draws over living eyes.
-                    const eyewearItem = equippedItem('eyewear');
-                    if (eyewearItem.draw) eyewearItem.draw(ctx, clothingGeo);
+                    drawClothingLayer(ctx, 'face', clothingGeo);
                 }
 
                 if (this.dead) {
@@ -3208,6 +3953,11 @@
                 return;
             }
 
+            if (gameState === 'BEAN_EDITOR') {
+                handleBeanEditorKey(e);
+                return;
+            }
+
             if (gameState !== 'PLAYING') return;
 
             // Toggle pause with B (P1) or G (P2), edge-triggered so auto-repeat can't flicker it.
@@ -3334,22 +4084,6 @@
                     }
                 }
             }
-
-            // Cheat codes (disabled while playing a custom level)
-            if (playingCustom) return;
-            if (e.key === '5') {
-                currentLevel = 4;
-                nextLevel();
-            } else if (e.key === '8') {
-                currentLevel = 9;
-                nextLevel();
-            } else if (e.key === '9') {
-                currentLevel = 89;
-                nextLevel();
-            } else if (e.key === '0') {
-                currentLevel = 99;
-                nextLevel();
-            }
         });
 
         document.addEventListener('keyup', (e) => {
@@ -3370,7 +4104,10 @@
             }
         });
 
-        document.addEventListener('click', () => {
+        // Clicking empty space on the start screen starts a game. Button clicks are skipped:
+        // a button that returns to the start screen would otherwise bubble here and start one.
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('button')) return;
             if (gameState === 'START') {
                 startGame();
             }
@@ -3581,6 +4318,9 @@
                 p.coyoteTimer = 0;
                 p.jumpHeld = false;
                 p.bobPhase = 0;
+                p.walkPhase = 0;
+                p.walkAmount = 0;
+                p.airAmount = 0;
                 p.facingDirection = 1;
                 p.shootCooldown = 0;
                 p.muzzleFlash = 0;
@@ -4887,7 +5627,7 @@
 
         function setEditorTool(tool) {
             editorTool = tool;
-            document.querySelectorAll('.ed-tool').forEach(btn => {
+            document.querySelectorAll('#editorBar .ed-tool').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.tool === tool);
             });
         }
@@ -5030,10 +5770,16 @@
             startMusic();
         }
 
-        function editorCanvasPoint(e) {
+        // Mouse position in game-canvas pixels (the canvas may be displayed scaled).
+        function canvasPointFromMouseEvent(e) {
             const rect = gameCanvas.getBoundingClientRect();
             const cx = (e.clientX - rect.left) * (gameCanvas.width / rect.width);
             const cy = (e.clientY - rect.top) * (gameCanvas.height / rect.height);
+            return { cx, cy };
+        }
+
+        function editorCanvasPoint(e) {
+            const { cx, cy } = canvasPointFromMouseEvent(e);
             return { cx, cy, wx: cx + editorCameraX, wy: cy };
         }
 
@@ -5241,7 +5987,7 @@
         }
 
         // Editor input wiring
-        document.querySelectorAll('.ed-tool').forEach(btn => {
+        document.querySelectorAll('#editorBar .ed-tool').forEach(btn => {
             btn.addEventListener('click', () => setEditorTool(btn.dataset.tool));
         });
         document.getElementById('enemyTypeSelect').addEventListener('change', () => setEditorTool('enemy'));
@@ -5302,50 +6048,564 @@
             editorCameraX = clampEditorCamera(editorCameraX + e.deltaY + e.deltaX);
         }, { passive: false });
 
+        // ===================== BEAN DESIGNER =====================
+        // Each player's bean can be painted pixel by pixel. A design is a grid of art pixels
+        // stretched over the bean's body box, so its columns:rows ratio matches the body's
+        // width:height ratio and each art pixel stays square in game.
+        const BEAN_PIXEL_COLUMNS = 12;
+        const BEAN_PIXEL_ROWS = 40;
+        const BEAN_DESIGN_STORAGE_KEYS = ['greenbeanCustomBean', 'greenbeanCustomBeanP2'];
+        const BEAN_EDITOR_CELL_SIZE = 14;
+        const BEAN_EDITOR_GRID_LEFT = 300;
+        const BEAN_EDITOR_GRID_TOP = 150;
+        const BEAN_UNDO_LIMIT = 50;
+        const BEAN_HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+        const BEAN_PALETTE = [
+            '#000000', '#ffffff', '#808080', '#2d5016', '#6fb33f', '#b6ff6a',
+            '#1e90ff', '#00e5ff', '#3a1a6b', '#8b5fcf', '#ff4fa3', '#e02424',
+            '#ff8c1a', '#ffd700', '#8b5a2b', '#f1c27d'
+        ];
+
+        // A player's classic bean (body, light face band, white eyes) as art pixels.
+        function classicBeanPixels(playerIndex) {
+            const colors = PLAYER_BEAN_COLORS[playerIndex];
+            const pixels = new Array(BEAN_PIXEL_COLUMNS * BEAN_PIXEL_ROWS).fill(colors.body);
+            const setPixel = (column, row, color) => { pixels[row * BEAN_PIXEL_COLUMNS + column] = color; };
+            for (let row = 0; row < 6; row++) {
+                for (let column = 0; column < BEAN_PIXEL_COLUMNS; column++) setPixel(column, row, colors.highlight);
+            }
+            for (let row = BEAN_PIXEL_ROWS - 5; row < BEAN_PIXEL_ROWS; row++) {
+                for (let column = 0; column < BEAN_PIXEL_COLUMNS; column++) setPixel(column, row, colors.shadow);
+            }
+            setPixel(2, 1, colors.shine);
+            setPixel(3, 1, colors.shine);
+            setPixel(2, 2, colors.shine);
+            for (const eyeCenterColumn of [2, BEAN_PIXEL_COLUMNS - 1 - 2]) {
+                for (let row = 6; row <= 8; row++) {
+                    for (let column = eyeCenterColumn - 1; column <= eyeCenterColumn + 1; column++) {
+                        setPixel(column, row, '#ffffff');
+                    }
+                }
+                setPixel(eyeCenterColumn, 7, '#000000');
+            }
+            return pixels;
+        }
+
+        // Reads a player's saved design. Returns null when nothing is saved; throws if the
+        // saved data is not a valid design so the caller can tell the player.
+        function loadBeanDesign(playerIndex) {
+            const raw = localStorage.getItem(BEAN_DESIGN_STORAGE_KEYS[playerIndex]);
+            if (raw === null) return null;
+            const data = JSON.parse(raw);
+            const pixelsAreValid = Array.isArray(data.pixels) &&
+                data.pixels.length === BEAN_PIXEL_COLUMNS * BEAN_PIXEL_ROWS &&
+                data.pixels.every(color => color === null || (typeof color === 'string' && BEAN_HEX_COLOR_PATTERN.test(color)));
+            if (!pixelsAreValid || typeof data.wearing !== 'boolean') {
+                throw new Error('Saved bean design has the wrong shape');
+            }
+            return { pixels: data.pixels, wearing: data.wearing };
+        }
+
+        // One design per player, indexed like `players`. `pixels` holds one hex color (or
+        // null for see-through) per art pixel, row by row. `wearing` says whether that
+        // player shows the design in game instead of the classic look.
+        const beanDesigns = [];
+        const beanDesignLoadErrors = [];
+        // One canvas pixel per art pixel per player; drawn scaled up with smoothing off.
+        const beanSpriteCanvases = [];
+        for (let playerIndex = 0; playerIndex < PLAYER_BEAN_COLORS.length; playerIndex++) {
+            beanDesigns.push({ pixels: classicBeanPixels(playerIndex), wearing: false });
+            beanDesignLoadErrors.push(null);
+            try {
+                const savedBeanDesign = loadBeanDesign(playerIndex);
+                if (savedBeanDesign) beanDesigns[playerIndex] = savedBeanDesign;
+            } catch (err) {
+                console.error('Could not load saved bean design for player ' + (playerIndex + 1) + ':', err);
+                beanDesignLoadErrors[playerIndex] = err;
+            }
+            const spriteCanvas = document.createElement('canvas');
+            spriteCanvas.width = BEAN_PIXEL_COLUMNS;
+            spriteCanvas.height = BEAN_PIXEL_ROWS;
+            beanSpriteCanvases.push(spriteCanvas);
+        }
+
+        function rebuildBeanSprite(playerIndex) {
+            const spriteCtx = beanSpriteCanvases[playerIndex].getContext('2d');
+            spriteCtx.clearRect(0, 0, BEAN_PIXEL_COLUMNS, BEAN_PIXEL_ROWS);
+            beanDesigns[playerIndex].pixels.forEach((color, index) => {
+                if (color === null) return;
+                spriteCtx.fillStyle = color;
+                spriteCtx.fillRect(index % BEAN_PIXEL_COLUMNS, Math.floor(index / BEAN_PIXEL_COLUMNS), 1, 1);
+            });
+        }
+        beanDesigns.forEach((design, playerIndex) => rebuildBeanSprite(playerIndex));
+
+        // Draws a player's painted design over a bean body box centered on x = 0.
+        function drawBeanDesign(ctx, playerIndex, topY, bodyWidth, bodyHeight) {
+            ctx.save();
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(beanSpriteCanvases[playerIndex], -bodyWidth / 2, topY, bodyWidth, bodyHeight);
+            ctx.restore();
+        }
+
+        let beanEditorPlayerIndex = 0;     // whose bean the designer is painting
+        let beanEditorTool = 'pen';
+        let beanEditorColor = '#6fb33f';
+        let beanEditorMirror = false;      // paint the matching pixel on the other side too
+        let beanStrokeBefore = null;       // pixels as they were when the current stroke began
+        let beanStrokeLastCell = null;     // last cell painted in the current drag
+        let beanEditorHoverCell = null;    // cell under the mouse, for the cursor outline
+        let beanUndoStacks = PLAYER_BEAN_COLORS.map(() => []);
+
+        function editedBeanDesign() {
+            return beanDesigns[beanEditorPlayerIndex];
+        }
+
+        function editedPlayerName() {
+            return 'Player ' + (beanEditorPlayerIndex + 1);
+        }
+
+        function setBeanHint(msg) {
+            document.getElementById('beanHint').textContent = msg;
+        }
+
+        function saveBeanDesign() {
+            try {
+                localStorage.setItem(BEAN_DESIGN_STORAGE_KEYS[beanEditorPlayerIndex], JSON.stringify(editedBeanDesign()));
+            } catch (err) {
+                console.error('Could not save bean design:', err);
+                setBeanHint('⚠️ Could not save ' + editedPlayerName() + "'s bean: " + err.message);
+            }
+        }
+
+        function refreshBeanEditorControls() {
+            document.querySelectorAll('#beanEditorBar [data-bean-tool]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.beanTool === beanEditorTool);
+            });
+            document.getElementById('beanMirrorButton').classList.toggle('active', beanEditorMirror);
+            document.querySelectorAll('.bean-swatch').forEach(swatch => {
+                swatch.classList.toggle('active', swatch.dataset.color === beanEditorColor);
+            });
+            document.getElementById('beanColorInput').value = beanEditorColor;
+            document.getElementById('beanWearButton').textContent = '👕 Wear It: ' + (editedBeanDesign().wearing ? 'ON' : 'OFF');
+            document.getElementById('beanPlayerButton').textContent = '🎮 ' + editedPlayerName();
+        }
+
+        // Tells the player about a saved design that could not be loaded, or how to paint.
+        function showBeanEditorWelcomeHint() {
+            const loadError = beanDesignLoadErrors[beanEditorPlayerIndex];
+            if (loadError) {
+                setBeanHint('⚠️ ' + editedPlayerName() + "'s saved bean could not be loaded (" + loadError.message + '), so this is the classic bean');
+            } else {
+                setBeanHint('Painting ' + editedPlayerName() + ' • Saves automatically • ⌘Z / Ctrl+Z to undo • Esc to go back');
+            }
+        }
+
+        function switchBeanEditorPlayer() {
+            finishBeanStroke();
+            beanEditorPlayerIndex = (beanEditorPlayerIndex + 1) % beanDesigns.length;
+            refreshBeanEditorControls();
+            showBeanEditorWelcomeHint();
+        }
+
+        function setBeanTool(tool) {
+            beanEditorTool = tool;
+            refreshBeanEditorControls();
+        }
+
+        // Choosing a color means you want to paint with it, so switch to the pen.
+        function setBeanColor(color) {
+            beanEditorColor = color.toLowerCase();
+            beanEditorTool = 'pen';
+            refreshBeanEditorControls();
+        }
+
+        function toggleBeanMirror() {
+            beanEditorMirror = !beanEditorMirror;
+            refreshBeanEditorControls();
+        }
+
+        function toggleBeanWearing() {
+            const design = editedBeanDesign();
+            design.wearing = !design.wearing;
+            saveBeanDesign();
+            refreshBeanEditorControls();
+            setBeanHint(design.wearing
+                ? '👕 ' + editedPlayerName() + ' will wear this bean in game'
+                : '🌱 ' + editedPlayerName() + ' will look like the classic bean');
+        }
+
+        // Records the edited bean's current pixels so the next change can be undone.
+        function pushBeanUndo(pixelsBefore) {
+            const undoStack = beanUndoStacks[beanEditorPlayerIndex];
+            undoStack.push(pixelsBefore);
+            if (undoStack.length > BEAN_UNDO_LIMIT) undoStack.shift();
+        }
+
+        // Every finished edit is worn and saved right away, so nothing is ever lost.
+        function commitBeanEdit() {
+            editedBeanDesign().wearing = true;
+            rebuildBeanSprite(beanEditorPlayerIndex);
+            saveBeanDesign();
+            refreshBeanEditorControls();
+        }
+
+        function undoBeanEdit() {
+            const undoStack = beanUndoStacks[beanEditorPlayerIndex];
+            if (undoStack.length === 0) {
+                setBeanHint('Nothing to undo');
+                return;
+            }
+            editedBeanDesign().pixels = undoStack.pop();
+            rebuildBeanSprite(beanEditorPlayerIndex);
+            saveBeanDesign();
+            setBeanHint('↩ Undone');
+        }
+
+        function replaceAllBeanPixels(pixels, hint) {
+            pushBeanUndo(editedBeanDesign().pixels.slice());
+            editedBeanDesign().pixels = pixels;
+            commitBeanEdit();
+            setBeanHint(hint);
+        }
+
+        function resetBeanToClassic() {
+            replaceAllBeanPixels(classicBeanPixels(beanEditorPlayerIndex), '🌱 Back to the classic bean • ↩ Undo brings your art back');
+        }
+
+        function clearBeanDesign() {
+            replaceAllBeanPixels(new Array(BEAN_PIXEL_COLUMNS * BEAN_PIXEL_ROWS).fill(null), '🧹 Blank bean • ↩ Undo brings your art back');
+        }
+
+        function openBeanEditor() {
+            if (!audioContext) initAudio();
+            stopMusic();
+            gameState = 'BEAN_EDITOR';
+            beanStrokeBefore = null;
+            beanStrokeLastCell = null;
+            beanEditorHoverCell = null;
+            beanUndoStacks = PLAYER_BEAN_COLORS.map(() => []);
+            ['startScreen', 'levelComplete', 'gameOver', 'customComplete'].forEach(id =>
+                document.getElementById(id).classList.add('hidden'));
+            document.getElementById('beanEditorScreen').classList.remove('hidden');
+            document.getElementById('ui').style.display = 'none';
+            refreshBeanEditorControls();
+            showBeanEditorWelcomeHint();
+        }
+
+        function backToStartFromBeanEditor() {
+            gameState = 'START';
+            document.getElementById('beanEditorScreen').classList.add('hidden');
+            document.getElementById('ui').style.display = '';
+            document.getElementById('startScreen').classList.remove('hidden');
+            document.getElementById('highScore').textContent = highScore;
+            refreshContinueButton();
+        }
+
+        function handleBeanEditorKey(e) {
+            if (e.key === 'Escape') {
+                backToStartFromBeanEditor();
+            } else if (e.key.toLowerCase() === 'z' && (e.metaKey || e.ctrlKey)) {
+                undoBeanEdit();
+                e.preventDefault();
+            }
+        }
+
+        // The art-pixel cell under a canvas point, or null when outside the grid.
+        function beanCellAt(cx, cy) {
+            const column = Math.floor((cx - BEAN_EDITOR_GRID_LEFT) / BEAN_EDITOR_CELL_SIZE);
+            const row = Math.floor((cy - BEAN_EDITOR_GRID_TOP) / BEAN_EDITOR_CELL_SIZE);
+            if (column < 0 || column >= BEAN_PIXEL_COLUMNS || row < 0 || row >= BEAN_PIXEL_ROWS) return null;
+            return { column, row };
+        }
+
+        // Replaces the 4-connected region of same-colored pixels starting at a cell.
+        function floodFillBeanPixels(startColumn, startRow, newColor) {
+            const pixels = editedBeanDesign().pixels;
+            const targetColor = pixels[startRow * BEAN_PIXEL_COLUMNS + startColumn];
+            if (targetColor === newColor) return;
+            const pending = [[startColumn, startRow]];
+            while (pending.length > 0) {
+                const [column, row] = pending.pop();
+                if (column < 0 || column >= BEAN_PIXEL_COLUMNS || row < 0 || row >= BEAN_PIXEL_ROWS) continue;
+                const index = row * BEAN_PIXEL_COLUMNS + column;
+                if (pixels[index] !== targetColor) continue;
+                pixels[index] = newColor;
+                pending.push([column + 1, row], [column - 1, row], [column, row + 1], [column, row - 1]);
+            }
+        }
+
+        // Applies the pen, eraser, or fill at a cell (and its mirror cell when mirroring).
+        function applyBeanToolAt(cell) {
+            const columns = [cell.column];
+            const mirrorColumn = BEAN_PIXEL_COLUMNS - 1 - cell.column;
+            if (beanEditorMirror && mirrorColumn !== cell.column) columns.push(mirrorColumn);
+            for (const column of columns) {
+                if (beanEditorTool === 'fill') {
+                    floodFillBeanPixels(column, cell.row, beanEditorColor);
+                } else {
+                    editedBeanDesign().pixels[cell.row * BEAN_PIXEL_COLUMNS + column] = beanEditorTool === 'eraser' ? null : beanEditorColor;
+                }
+            }
+        }
+
+        // Paints every cell on the straight line between two cells, so fast drags leave no gaps.
+        function applyBeanToolAlongLine(fromCell, toCell) {
+            const steps = Math.max(Math.abs(toCell.column - fromCell.column), Math.abs(toCell.row - fromCell.row));
+            for (let step = 1; step <= steps; step++) {
+                const t = step / steps;
+                applyBeanToolAt({
+                    column: Math.round(fromCell.column + (toCell.column - fromCell.column) * t),
+                    row: Math.round(fromCell.row + (toCell.row - fromCell.row) * t)
+                });
+            }
+        }
+
+        function finishBeanStroke() {
+            if (beanStrokeBefore === null) return;
+            const changed = editedBeanDesign().pixels.some((color, index) => color !== beanStrokeBefore[index]);
+            if (changed) {
+                pushBeanUndo(beanStrokeBefore);
+                commitBeanEdit();
+            }
+            beanStrokeBefore = null;
+            beanStrokeLastCell = null;
+        }
+
+        gameCanvas.addEventListener('mousedown', (e) => {
+            if (gameState !== 'BEAN_EDITOR') return;
+            const pt = canvasPointFromMouseEvent(e);
+            const cell = beanCellAt(pt.cx, pt.cy);
+            if (!cell) return;
+            if (beanEditorTool === 'picker') {
+                const pickedColor = editedBeanDesign().pixels[cell.row * BEAN_PIXEL_COLUMNS + cell.column];
+                if (pickedColor === null) {
+                    setBeanHint('That pixel is see-through — pick a colored one');
+                } else {
+                    setBeanColor(pickedColor);
+                    setBeanHint('💧 Picked ' + pickedColor + ' • Now painting with it');
+                }
+                return;
+            }
+            beanStrokeBefore = editedBeanDesign().pixels.slice();
+            applyBeanToolAt(cell);
+            rebuildBeanSprite(beanEditorPlayerIndex);
+            // Fill acts once per click; the pen and eraser keep going while dragging.
+            if (beanEditorTool === 'fill') finishBeanStroke();
+            else beanStrokeLastCell = cell;
+        });
+
+        gameCanvas.addEventListener('mousemove', (e) => {
+            if (gameState !== 'BEAN_EDITOR') return;
+            const pt = canvasPointFromMouseEvent(e);
+            const cell = beanCellAt(pt.cx, pt.cy);
+            beanEditorHoverCell = cell;
+            if (!beanStrokeLastCell || !cell) return;
+            if (cell.column === beanStrokeLastCell.column && cell.row === beanStrokeLastCell.row) return;
+            applyBeanToolAlongLine(beanStrokeLastCell, cell);
+            beanStrokeLastCell = cell;
+            rebuildBeanSprite(beanEditorPlayerIndex);
+        });
+
+        gameCanvas.addEventListener('mouseleave', () => {
+            beanEditorHoverCell = null;
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (gameState !== 'BEAN_EDITOR') return;
+            finishBeanStroke();
+        });
+
+        document.querySelectorAll('#beanEditorBar [data-bean-tool]').forEach(btn => {
+            btn.addEventListener('click', () => setBeanTool(btn.dataset.beanTool));
+        });
+        BEAN_PALETTE.forEach(color => {
+            const swatch = document.createElement('button');
+            swatch.className = 'bean-swatch';
+            swatch.dataset.color = color;
+            swatch.title = color;
+            swatch.style.background = color;
+            swatch.addEventListener('click', () => setBeanColor(color));
+            document.getElementById('beanPalette').appendChild(swatch);
+        });
+        document.getElementById('beanColorInput').addEventListener('input', (e) => setBeanColor(e.target.value));
+
+        function renderBeanEditor() {
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            const cell = BEAN_EDITOR_CELL_SIZE;
+            const gridWidth = BEAN_PIXEL_COLUMNS * cell;
+            const gridHeight = BEAN_PIXEL_ROWS * cell;
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = PLAYER_BEAN_COLORS[beanEditorPlayerIndex].highlight;
+            ctx.font = 'bold 22px "Courier New", monospace';
+            ctx.fillText(editedPlayerName().toUpperCase() + "'S BEAN", BEAN_EDITOR_GRID_LEFT + gridWidth / 2, BEAN_EDITOR_GRID_TOP - 25);
+
+            // Art pixels, with a checkerboard showing through see-through ones.
+            for (let row = 0; row < BEAN_PIXEL_ROWS; row++) {
+                for (let column = 0; column < BEAN_PIXEL_COLUMNS; column++) {
+                    const x = BEAN_EDITOR_GRID_LEFT + column * cell;
+                    const y = BEAN_EDITOR_GRID_TOP + row * cell;
+                    const color = editedBeanDesign().pixels[row * BEAN_PIXEL_COLUMNS + column];
+                    if (color === null) {
+                        ctx.fillStyle = '#3a3a3a';
+                        ctx.fillRect(x, y, cell, cell);
+                        ctx.fillStyle = '#555';
+                        ctx.fillRect(x, y, cell / 2, cell / 2);
+                        ctx.fillRect(x + cell / 2, y + cell / 2, cell / 2, cell / 2);
+                    } else {
+                        ctx.fillStyle = color;
+                        ctx.fillRect(x, y, cell, cell);
+                    }
+                }
+            }
+
+            // Grid lines
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let column = 0; column <= BEAN_PIXEL_COLUMNS; column++) {
+                const x = BEAN_EDITOR_GRID_LEFT + column * cell + 0.5;
+                ctx.moveTo(x, BEAN_EDITOR_GRID_TOP);
+                ctx.lineTo(x, BEAN_EDITOR_GRID_TOP + gridHeight);
+            }
+            for (let row = 0; row <= BEAN_PIXEL_ROWS; row++) {
+                const y = BEAN_EDITOR_GRID_TOP + row * cell + 0.5;
+                ctx.moveTo(BEAN_EDITOR_GRID_LEFT, y);
+                ctx.lineTo(BEAN_EDITOR_GRID_LEFT + gridWidth, y);
+            }
+            ctx.stroke();
+
+            ctx.strokeStyle = '#0f0';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(BEAN_EDITOR_GRID_LEFT - 1, BEAN_EDITOR_GRID_TOP - 1, gridWidth + 2, gridHeight + 2);
+
+            if (beanEditorMirror) {
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.8)';
+                ctx.setLineDash([6, 4]);
+                ctx.beginPath();
+                ctx.moveTo(BEAN_EDITOR_GRID_LEFT + gridWidth / 2, BEAN_EDITOR_GRID_TOP - 8);
+                ctx.lineTo(BEAN_EDITOR_GRID_LEFT + gridWidth / 2, BEAN_EDITOR_GRID_TOP + gridHeight + 8);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Cursor outline on the hovered cell (and its mirror)
+            if (beanEditorHoverCell) {
+                const hoverColumns = [beanEditorHoverCell.column];
+                const mirrorColumn = BEAN_PIXEL_COLUMNS - 1 - beanEditorHoverCell.column;
+                if (beanEditorMirror && mirrorColumn !== beanEditorHoverCell.column) hoverColumns.push(mirrorColumn);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                for (const column of hoverColumns) {
+                    ctx.strokeRect(BEAN_EDITOR_GRID_LEFT + column * cell + 1,
+                        BEAN_EDITOR_GRID_TOP + beanEditorHoverCell.row * cell + 1, cell - 2, cell - 2);
+                }
+            }
+
+            // Previews standing on a ledge: big, and the real in-game size.
+            const ledgeY = BEAN_EDITOR_GRID_TOP + gridHeight;
+            const previews = [
+                { label: 'BIG', centerX: 720, size: PLAYER_SIZE * 3 },
+                { label: 'IN GAME', centerX: 960, size: PLAYER_SIZE }
+            ];
+            // The previews walk in place so the feet can be seen stepping.
+            const previewWalkPhase = performance.now() / 110;
+            for (const preview of previews) {
+                const bodyWidth = preview.size * 0.6;
+                const bodyHeight = preview.size * 2.0;
+                const feet = beanFeet(preview.size, bodyWidth, ledgeY, previewWalkPhase, 1, 0);
+                const stepBounce = -Math.abs(Math.cos(previewWalkPhase)) * preview.size * 0.05;
+                const topY = ledgeY - preview.size * BEAN_FOOT_RADIUS_RATIO - bodyHeight + stepBounce;
+                ctx.fillStyle = '#654321';
+                ctx.fillRect(preview.centerX - 80, ledgeY, 160, PLATFORM_HEIGHT);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+                ctx.beginPath();
+                ctx.ellipse(preview.centerX, ledgeY, bodyWidth * 0.9, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.save();
+                ctx.translate(preview.centerX, 0);
+                drawBeanDesign(ctx, beanEditorPlayerIndex, topY, bodyWidth, bodyHeight);
+                drawBeanFeet(ctx, feet, beanEditorPlayerIndex);
+                ctx.restore();
+                // Label sits on the ledge itself, clear of the hint line at the bottom.
+                ctx.fillStyle = '#0f0';
+                ctx.font = 'bold 14px "Courier New", monospace';
+                ctx.fillText(preview.label, preview.centerX, ledgeY + PLATFORM_HEIGHT / 2 + 1);
+            }
+
+            // Current color chip
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#0f0';
+            ctx.font = 'bold 18px "Courier New", monospace';
+            ctx.fillText('COLOR', 620, BEAN_EDITOR_GRID_TOP + 10);
+            ctx.fillStyle = beanEditorColor;
+            ctx.fillRect(700, BEAN_EDITOR_GRID_TOP - 6, 32, 32);
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(700, BEAN_EDITOR_GRID_TOP - 6, 32, 32);
+
+            if (!editedBeanDesign().wearing) {
+                ctx.fillStyle = '#ffd700';
+                ctx.fillText('Not worn in game — press 👕 Wear It', 620, BEAN_EDITOR_GRID_TOP + 55);
+            }
+        }
+
         let lastTime = performance.now();
 
-        // Draws a preview bean (centered on the current transform origin) wearing whatever
-        // is currently equipped in every slot, matching the in-game bean's look.
-        function drawPreviewBean(feetY, size) {
+        // Draws a player's standing preview bean (centered on the current transform origin,
+        // feet on groundY) wearing whatever is equipped in every slot, matching its in-game look.
+        function drawPreviewBean(playerIndex, groundY, size) {
             const bodyWidth = size * 0.6;
             const bodyHeight = size * 2.0;
-            const topY = feetY - bodyHeight;
+            const feet = beanFeet(size, bodyWidth, groundY, 0, 0, 0);
+            const topY = groundY - size * BEAN_FOOT_RADIUS_RATIO - bodyHeight;
             const eyeY = topY + size * 0.375;
-            const geo = { topY, bodyWidth, bodyHeight, size, eyeY };
+            const geo = { topY, bodyWidth, bodyHeight, size, eyeY, feet };
+            const wearsBeanDesign = beanDesigns[playerIndex].wearing;
 
-            const capeItem = equippedItem('cape');
-            if (capeItem.draw) capeItem.draw(ctx, geo);
+            drawClothingLayer(ctx, 'behind', geo);
 
-            ctx.fillStyle = '#2d5016';
-            ctx.fillRect(-bodyWidth / 2, topY, bodyWidth, bodyHeight);
+            if (wearsBeanDesign) {
+                drawBeanDesign(ctx, playerIndex, topY, bodyWidth, bodyHeight);
+            } else {
+                ctx.fillStyle = PLAYER_BEAN_COLORS[playerIndex].body;
+                ctx.fillRect(-bodyWidth / 2, topY, bodyWidth, bodyHeight);
 
-            const lightGrad = ctx.createLinearGradient(0, topY, 0, topY + bodyHeight);
-            lightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
-            lightGrad.addColorStop(0.3, 'rgba(255, 255, 255, 0)');
-            lightGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
-            lightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.38)');
-            ctx.fillStyle = lightGrad;
-            ctx.fillRect(-bodyWidth / 2, topY, bodyWidth, bodyHeight);
+                const lightGrad = ctx.createLinearGradient(0, topY, 0, topY + bodyHeight);
+                lightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+                lightGrad.addColorStop(0.3, 'rgba(255, 255, 255, 0)');
+                lightGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
+                lightGrad.addColorStop(1, 'rgba(0, 0, 0, 0.38)');
+                ctx.fillStyle = lightGrad;
+                ctx.fillRect(-bodyWidth / 2, topY, bodyWidth, bodyHeight);
 
-            ctx.fillStyle = '#6fb33f';
-            ctx.fillRect(-bodyWidth / 2, topY, bodyWidth, size * 0.3);
+                ctx.fillStyle = PLAYER_BEAN_COLORS[playerIndex].highlight;
+                ctx.fillRect(-bodyWidth / 2, topY, bodyWidth, size * 0.3);
+            }
 
-            const hatItem = equippedItem('hat');
-            if (hatItem.draw) hatItem.draw(ctx, geo);
+            drawBeanFeet(ctx, feet, playerIndex);
+            drawClothingLayer(ctx, 'body', geo);
+            drawClothingLayer(ctx, 'head', geo);
 
-            ctx.fillStyle = '#fff';
-            ctx.beginPath();
-            ctx.arc(-8, eyeY, 5, 0, Math.PI * 2);
-            ctx.arc(8, eyeY, 5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#000';
-            ctx.beginPath();
-            ctx.arc(-8, eyeY, 2, 0, Math.PI * 2);
-            ctx.arc(8, eyeY, 2, 0, Math.PI * 2);
-            ctx.fill();
+            if (!wearsBeanDesign) {
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(-8, eyeY, 5, 0, Math.PI * 2);
+                ctx.arc(8, eyeY, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(-8, eyeY, 2, 0, Math.PI * 2);
+                ctx.arc(8, eyeY, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
 
-            const eyewearItem = equippedItem('eyewear');
-            if (eyewearItem.draw) eyewearItem.draw(ctx, geo);
+            drawClothingLayer(ctx, 'face', geo);
         }
 
         // Pause screen: a wardrobe with a slot per clothing type, over the frozen scene.
@@ -5358,7 +6618,7 @@
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
             // Panel
-            const panelX = cx - 320, panelY = 90, panelW = 640, panelH = 620;
+            const panelX = cx - 320, panelY = 50, panelW = 640, panelH = 700;
             ctx.fillStyle = 'rgba(16, 22, 16, 0.94)';
             ctx.strokeStyle = 'rgba(111, 179, 63, 0.7)';
             ctx.lineWidth = 2;
@@ -5376,25 +6636,39 @@
             ctx.font = 'bold 22px Arial';
             ctx.fillText('WARDROBE', cx, panelY + 100);
 
-            // Live preview of the full outfit
-            const feetY = panelY + 330;
-            ctx.save();
-            ctx.translate(cx, 0);
-            drawPreviewBean(feetY, 64);
-            ctx.restore();
+            // Live preview of the full outfit on every bean in the game, side by side
+            const previewGroundY = panelY + 350;
+            const previewSpacing = 140;
+            players.forEach((player, playerIndex) => {
+                ctx.save();
+                ctx.translate(cx + (playerIndex - (players.length - 1) / 2) * previewSpacing, 0);
+                drawPreviewBean(playerIndex, previewGroundY, 64);
+                ctx.restore();
+            });
 
             // One row per clothing slot; the active slot is highlighted with chevrons.
-            const firstRowY = panelY + 400;
+            const firstRowY = panelY + 420;
+            const rowSpacing = 40;
             for (let i = 0; i < CLOTHING_SLOTS.length; i++) {
                 const slotKey = CLOTHING_SLOTS[i];
                 const item = equippedItem(slotKey);
-                const rowY = firstRowY + i * 48;
+                const rowY = firstRowY + i * rowSpacing;
                 const active = i === wardrobeSlot;
                 ctx.fillStyle = active ? '#ffe27a' : 'rgba(255, 255, 255, 0.7)';
                 ctx.font = active ? 'bold 26px Arial' : '22px Arial';
                 const label = CLOTHING[slotKey].label + ':  ' + item.name;
                 ctx.fillText(active ? '‹  ' + label + '  ›' : label, cx, rowY);
             }
+
+            // What the active slot unlocks next, so there's always something to aim for.
+            const activeSlotKey = CLOTHING_SLOTS[wardrobeSlot];
+            const nextLockedItem = CLOTHING[activeSlotKey].items.find(item => score < item.threshold);
+            ctx.fillStyle = '#8fe0c0';
+            ctx.font = '18px Arial';
+            ctx.fillText(nextLockedItem
+                ? '🔒 Next ' + CLOTHING[activeSlotKey].label.toLowerCase() + ': ' + nextLockedItem.name + ' at ' + nextLockedItem.threshold.toLocaleString() + ' points'
+                : '✨ Every ' + CLOTHING[activeSlotKey].label.toLowerCase() + ' unlocked!',
+                cx, firstRowY + CLOTHING_SLOTS.length * rowSpacing + 8);
 
             // Footer hint
             ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
@@ -5516,6 +6790,8 @@
                 else if (shopOpen) drawShopOverlay();
             } else if (gameState === 'EDITOR') {
                 renderEditor();
+            } else if (gameState === 'BEAN_EDITOR') {
+                renderBeanEditor();
             }
 
             requestAnimationFrame(gameLoop);

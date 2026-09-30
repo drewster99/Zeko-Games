@@ -142,11 +142,7 @@ Keyboard controls (lines ~1525-1550):
 - Space: Jump (double jump if powerup active)
 - X key: Shoot projectiles (respects cooldown)
 - Click anywhere: Starts game / advances screens
-- Cheat codes during gameplay:
-  - `5`: Jump to level 5 (first mini game)
-  - `8`: Jump to level 10 (first boss)
-  - `9`: Jump to level 90 (9th boss)
-  - `0`: Jump to level 100 (final boss)
+- There are intentionally no level-skip cheat keys; levels must be beaten in order
 
 ## Development Guidelines
 
