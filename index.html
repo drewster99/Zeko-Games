@@ -160,12 +160,11 @@
         }
 
         #glitchOverlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
             z-index: 3;
+            /* Keep the shared canvas border's size so it lines up, but not its color or glow:
+               the difference blend would turn the game canvas's green frame black. */
+            border-color: transparent;
+            box-shadow: none;
             pointer-events: none;
             mix-blend-mode: difference;
         }
@@ -281,7 +280,7 @@
             cursor: pointer;
         }
 
-        #customComplete {
+        #customComplete, #duelOver {
             position: absolute;
             top: 0;
             left: 0;
@@ -305,9 +304,9 @@
         <canvas id="glitchOverlay" width="1200" height="800" class="hidden"></canvas>
 
         <div id="ui">
-            <div>Level: <span id="level">1</span>/100</div>
-            <div>Score: <span id="score">0</span></div>
-            <div>🪙 Coins: <span id="coins">0</span></div>
+            <div class="campaign-stat">Level: <span id="level">1</span>/100</div>
+            <div class="campaign-stat">Score: <span id="score">0</span></div>
+            <div class="campaign-stat">🪙 Coins: <span id="coins">0</span></div>
             <div class="player-label p1">P1</div>
             <div class="hearts" id="hearts1">❤️❤️❤️</div>
             <div class="player-powerups" id="powerups1"></div>
@@ -334,7 +333,10 @@
             <p style="font-size: 14px; color: #8b5fcf; opacity: 0.8;">Player 2: Arrow Keys - Move &amp; Jump · P - Shoot</p>
             <p style="margin-top: 15px; font-size: 16px; opacity: 0.7;">High Score: <span id="highScore">0</span></p>
             <button class="button" id="continueButton" onclick="continueGame()" style="display:none;">CONTINUE</button>
-            <button class="button" onclick="startGame()">START GAME</button>
+            <div class="button-row">
+                <button class="button" onclick="startGame()">START GAME</button>
+                <button class="button" onclick="startDuel()">⚔️ DUEL</button>
+            </div>
             <div class="button-row">
                 <button class="button" onclick="openEditor()">MAKE YOUR OWN LEVEL</button>
                 <button class="button" onclick="openBeanEditor()">DESIGN YOUR BEAN</button>
@@ -355,6 +357,15 @@
             <p>Final Score: <span id="finalScore">0</span></p>
             <p>High Score: <span id="gameOverHighScore">0</span></p>
             <button class="button" onclick="restartGame()">TRY AGAIN</button>
+        </div>
+
+        <div id="duelOver" class="hidden">
+            <h2 id="duelWinnerTitle">PLAYER 1 WINS THE DUEL!</h2>
+            <p id="duelFinalScore">P1  2 – 0  P2</p>
+            <div class="button-row">
+                <button class="button" onclick="startDuel()">REMATCH</button>
+                <button class="button" onclick="backToStartFromDuel()">MAIN MENU</button>
+            </div>
         </div>
 
         <div id="customComplete" class="hidden">
@@ -1326,9 +1337,15 @@
         let wardrobeSlot = 0;              // which slot the pause wardrobe is editing
         let lastUnlockThreshold = 0;       // highest clothing milestone already announced
 
-        // Items in a slot the current score has unlocked (always includes "None").
+        // The score clothing unlocks are measured against: the run's score, or in a duel
+        // (which has no score) the high score, so duelists wear everything they've earned.
+        function clothingUnlockScore() {
+            return playingDuel ? highScore : score;
+        }
+
+        // Items in a slot that are unlocked (always includes "None").
         function unlockedItems(slotKey) {
-            return CLOTHING[slotKey].items.filter(item => score >= item.threshold);
+            return CLOTHING[slotKey].items.filter(item => clothingUnlockScore() >= item.threshold);
         }
 
         // The item a slot should actually render: the manual pick if set and unlocked,
@@ -1336,12 +1353,12 @@
         function equippedItem(slotKey) {
             const items = CLOTHING[slotKey].items;
             const choice = manualChoice[slotKey];
-            if (choice !== undefined && items[choice] && score >= items[choice].threshold) {
+            if (choice !== undefined && items[choice] && clothingUnlockScore() >= items[choice].threshold) {
                 return items[choice];
             }
             let best = items[0];
             for (const item of items) {
-                if (score >= item.threshold) best = item;
+                if (clothingUnlockScore() >= item.threshold) best = item;
             }
             return best;
         }
@@ -1351,7 +1368,7 @@
             const items = CLOTHING[slotKey].items;
             const unlocked = items
                 .map((item, index) => ({ item, index }))
-                .filter(entry => score >= entry.item.threshold);
+                .filter(entry => clothingUnlockScore() >= entry.item.threshold);
             if (unlocked.length === 0) return;
             const current = equippedItem(slotKey);
             let pos = unlocked.findIndex(entry => entry.item === current);
@@ -1360,12 +1377,12 @@
             manualChoice[slotKey] = unlocked[pos].index;
         }
 
-        // Highest clothing threshold the current score has reached (0 if none).
+        // Highest clothing threshold that is unlocked (0 if none).
         function maxUnlockedThreshold() {
             let max = 0;
             for (const key of CLOTHING_SLOTS) {
                 for (const item of CLOTHING[key].items) {
-                    if (score >= item.threshold && item.threshold > max) max = item.threshold;
+                    if (clothingUnlockScore() >= item.threshold && item.threshold > max) max = item.threshold;
                 }
             }
             return max;
@@ -1396,6 +1413,7 @@
         let highScore = parseInt(localStorage.getItem('greenbeanHighScore')) || 0;
         let cameraX = 0;
         let playingCustom = false;
+        let playingDuel = false;
         let paused = false;
 
         // Coins currency, purchased ally minions, and the shop (opened with Z).
@@ -2227,6 +2245,7 @@
                 this.shootCooldown = 0;
                 this.facingDirection = 1;
                 this.muzzleFlash = 0;
+                this.duelHurtTimer = 0; // seconds left of post-hit blinking in a duel
                 this.coyoteTimer = 0;   // brief window to still jump after leaving a ledge
                 this.jumpHeld = false;  // true while a jump button is held (for variable height)
                 this.crouching = false; // true while a crouch button is held (S / Down)
@@ -2382,9 +2401,11 @@
                 ctx.save();
                 ctx.translate(screenX, this.y);
 
-                // Ghost rendering for dead players
+                // Ghost rendering for dead players; a freshly hit duelist blinks.
                 if (this.dead) {
                     ctx.globalAlpha = 0.3;
+                } else if (this.duelHurtTimer > 0 && Math.floor(this.duelHurtTimer * 12) % 2 === 0) {
+                    ctx.globalAlpha = 0.35;
                 }
 
                 // Apply big boy mode scaling, pivoted on the feet (bottom of the collision
@@ -2612,9 +2633,7 @@
                     drawClothingLayer(ctx, 'face', clothingGeo);
                 }
 
-                if (this.dead) {
-                    ctx.globalAlpha = 1;
-                }
+                ctx.globalAlpha = 1;
 
                 ctx.restore();
             }
@@ -2636,7 +2655,8 @@
                     y: this.y,
                     vx: speed * Math.cos(angleRadians) * this.facingDirection,
                     vy: speed * Math.sin(angleRadians),
-                    size: 8
+                    size: 8,
+                    ownerIndex: this.playerIndex
                 };
             }
 
@@ -3969,7 +3989,7 @@
             }
 
             // Open/close the shop with Z (not while paused).
-            if (e.key.toLowerCase() === 'z' && !e.repeat && !paused) {
+            if (e.key.toLowerCase() === 'z' && !e.repeat && !paused && !playingDuel) {
                 shopOpen = !shopOpen;
                 if (shopOpen) shopIndex = 0;
                 e.preventDefault();
@@ -3992,8 +4012,9 @@
                 return;
             }
 
-            // Start talking with T: freezes the action and captures typed text.
-            if (e.key.toLowerCase() === 't' && !e.repeat) {
+            // Start talking with T: freezes the action and captures typed text. Not in duels,
+            // where it would pause the fight and swallow the other player's keys.
+            if (e.key.toLowerCase() === 't' && !e.repeat && !playingDuel) {
                 talking = true;
                 talkBuffer = '';
                 for (const key in keys) keys[key] = false; // stop moving while typing
@@ -4039,8 +4060,14 @@
                 return;
             }
 
+            if (playingDuel && e.key === 'Escape') {
+                backToStartFromDuel();
+                return;
+            }
+
+            // Glitch mode spawns enemies, which would decide a duel instead of the players.
             if (e.key === ' ') {
-                activateGlitchMode();
+                if (!playingDuel) activateGlitchMode();
                 e.preventDefault();
                 return;
             }
@@ -4048,8 +4075,11 @@
             const p2Active = players.length > 1;
             const p1 = players[0];
 
-            // P2 spawn/revive: press 2 or Enter when P2 doesn't exist or is dead
-            if (e.key === '2' || e.key === 'Enter') {
+            // Nobody moves or shoots during a duel countdown.
+            if (duelControlsLocked()) return;
+
+            // P2 spawn/revive: press 2 or Enter when P2 doesn't exist or is dead (not in duels)
+            if (!playingDuel && (e.key === '2' || e.key === 'Enter')) {
                 if (!p2Active || players[1].dead) {
                     spawnPlayer2();
                     e.preventDefault();
@@ -4129,6 +4159,10 @@
                 showSaveMessage('Custom levels cannot be saved');
                 return;
             }
+            if (playingDuel) {
+                showSaveMessage('Duels cannot be saved');
+                return;
+            }
             const livingPlayers = players.filter(p => !p.dead);
             if (livingPlayers.length === 0) return;
             const data = {
@@ -4184,6 +4218,7 @@
             speechText = '';
             resetWardrobe();
             playingCustom = false;
+            playingDuel = false;
             currentLevel = data.currentLevel;
             score = data.score;
             coins = data.coins || 0;
@@ -4240,6 +4275,7 @@
             speechText = '';
             resetWardrobe();
             playingCustom = false;
+            playingDuel = false;
             currentLevel = 1;
             score = 0;
             coins = 0;
@@ -4433,6 +4469,9 @@
         }
 
         function updateUI() {
+            document.querySelectorAll('.campaign-stat').forEach(el => {
+                el.style.display = playingDuel ? 'none' : '';
+            });
             document.getElementById('level').textContent = currentLevel;
             document.getElementById('score').textContent = score;
             document.getElementById('coins').textContent = coins;
@@ -4484,6 +4523,10 @@
         }
 
         function checkAllDead() {
+            if (playingDuel) {
+                checkDuelRoundOver();
+                return;
+            }
             if (players.every(p => p.dead)) {
                 showGameOver();
             }
@@ -4521,7 +4564,7 @@
             const p2Active = players.length > 1;
             const p1 = players[0];
             if (p1) p1.crouching = false;
-            if (p1 && !p1.dead && !p1.fallingIntoGoal) {
+            if (p1 && !p1.dead && !p1.fallingIntoGoal && !duelControlsLocked()) {
                 // P1 crouches with C; Down also crouches P1 only in single-player mode.
                 p1.crouching = !!keys['c'] || (!p2Active && !!keys['arrowdown']);
                 let dx = 0;
@@ -4544,7 +4587,7 @@
             if (p2Active) {
                 const p2 = players[1];
                 if (p2) p2.crouching = false;
-                if (p2 && !p2.dead && !p2.fallingIntoGoal) {
+                if (p2 && !p2.dead && !p2.fallingIntoGoal && !duelControlsLocked()) {
                     // P2 crouches with the Down arrow.
                     p2.crouching = !!keys['arrowdown'];
                     let dx = 0;
@@ -4560,6 +4603,7 @@
 
             // Update all players
             players.forEach(p => p.update(dt, level.platforms));
+            if (playingDuel) updateDuel(dt);
 
             // Update timed powerups per player
             let timedPowerupsChanged = false;
@@ -5322,6 +5366,15 @@
                 ctx.beginPath();
                 ctx.arc(screenX, p.y, p.size * 0.4, 0, Math.PI * 2);
                 ctx.fill();
+
+                // In a duel, ring each shot in its shooter's color
+                if (playingDuel) {
+                    ctx.strokeStyle = PLAYER_BEAN_COLORS[p.ownerIndex].highlight;
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(screenX, p.y, p.size * 1.3, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
             });
 
             // Draw boss projectiles with a glow tinted to the boss's color
@@ -5511,7 +5564,7 @@
             // single camera can't hold both; otherwise render one full-screen view.
             const p1 = players[0];
             const p2 = players[1];
-            const bothActive = players.length > 1 && p1 && p2 &&
+            const bothActive = players.length > 1 && p1 && p2 && level.width > WIDTH &&
                 !p1.dead && !p2.dead && !p1.reachedGoal && !p2.reachedGoal;
             if (bothActive) {
                 const gap = Math.abs(p1.x - p2.x);
@@ -5538,6 +5591,8 @@
             vignette.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
             ctx.fillStyle = vignette;
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            if (playingDuel) drawDuelOverlay();
 
             // Transient banner when a new hat milestone is reached.
             if (hatUnlockText && gameTime < hatUnlockEndTime) {
@@ -5573,6 +5628,315 @@
                 ctx.restore();
             }
 
+            ctx.restore();
+        }
+
+        // ===================== DUEL MODE =====================
+        // Player 1 vs Player 2 on one screen: best of three rounds, shoot or stomp to hit.
+        const DUEL_ROUNDS_TO_WIN = 2;
+        const DUEL_START_HEALTH = 5;
+        const DUEL_COUNTDOWN_MS = 3000;
+        const DUEL_FIGHT_BANNER_MS = 800;
+        const DUEL_ROUND_OVER_MS = 2500;
+        const DUEL_HURT_SECONDS = 0.8;           // blinking grace period after being hit
+        const DUEL_KNOCKBACK_SPEED = 8;
+        const DUEL_ITEM_SPAWN_MS = 6000;
+        const DUEL_MAX_ITEMS = 3;
+        const DUEL_HEALTH_ITEM_CHANCE = 0.25;
+        // Powerups that keep a duel fair (no invincibility, enemy sleep, magnet, or mega).
+        const DUEL_POWERUP_TYPES = ['speed', 'doubleJump', 'shield', 'rapidFire', 'zeroGravity', 'bigBoy'];
+        const DUEL_GROUND_Y = HEIGHT - PLATFORM_Y_INCREMENT;
+        // Mirror-symmetric floating platforms, each reachable from the one below it.
+        const DUEL_ARENA_PLATFORMS = [
+            { x: 140, y: 640, width: 240 },
+            { x: 820, y: 640, width: 240 },
+            { x: 480, y: 560, width: 240 },
+            { x: 240, y: 450, width: 160 },
+            { x: 800, y: 450, width: 160 },
+            { x: 520, y: 340, width: 160 }
+        ];
+        const DUEL_START_X = [100, WIDTH - 100];
+
+        // Round/match state while a duel is running; null otherwise.
+        //   phase: 'countdown' → 'fighting' → 'roundOver' (then the next round, or the match ends)
+        let duel = null;
+
+        function duelControlsLocked() {
+            return playingDuel && duel.phase === 'countdown';
+        }
+
+        function buildDuelArena() {
+            const platforms = [{ x: 0, y: DUEL_GROUND_Y, width: WIDTH, height: PLATFORM_Y_INCREMENT }];
+            for (const plat of DUEL_ARENA_PLATFORMS) {
+                platforms.push({ x: plat.x, y: plat.y, width: plat.width, height: PLATFORM_HEIGHT });
+            }
+            return { platforms, enemies: [], collectibles: [], powerupItems: [], healthPickups: [], goal: null, width: WIDTH };
+        }
+
+        // Fresh beans at opposite ends facing each other, and a cleared arena.
+        function startDuelRound() {
+            players = DUEL_START_X.map((startX, playerIndex) => {
+                const p = new Player(playerIndex, startX);
+                p.y = DUEL_GROUND_Y - p.size;
+                p.facingDirection = playerIndex === 0 ? 1 : -1;
+                p.health = DUEL_START_HEALTH;
+                return p;
+            });
+            level = buildDuelArena();
+            projectiles = [];
+            duel.phase = 'countdown';
+            duel.phaseStartTime = gameTime;
+            duel.lastItemSpawnTime = gameTime;
+            duel.roundWinnerIndex = null;
+            updatePlayerUIVisibility();
+            updateUI();
+        }
+
+        function startDuel() {
+            if (!audioContext) initAudio();
+            ['startScreen', 'levelComplete', 'gameOver', 'customComplete', 'duelOver'].forEach(id =>
+                document.getElementById(id).classList.add('hidden'));
+            document.getElementById('ui').style.display = '';
+            document.getElementById('bossWarning').classList.add('hidden');
+            document.getElementById('miniGameWarning').classList.add('hidden');
+
+            gameState = 'PLAYING';
+            paused = false;
+            shopOpen = false;
+            talking = false;
+            speechText = '';
+            playingCustom = false;
+            playingDuel = true;
+            resetWardrobe();
+            lastUnlockThreshold = maxUnlockedThreshold();
+            currentLevel = 1;
+            score = 0;
+            coins = 0;
+            allies = [];
+            cameraX = 0;
+            boss = null;
+            particles = [];
+            bossProjectiles = [];
+            enemyProjectiles = [];
+            levelStartTime = gameTime;
+
+            duel = { roundWins: [0, 0], roundNumber: 1, phase: 'countdown', phaseStartTime: gameTime, lastItemSpawnTime: gameTime, roundWinnerIndex: null };
+            startDuelRound();
+            startMusic();
+        }
+
+        function backToStartFromDuel() {
+            stopMusic();
+            playingDuel = false;
+            duel = null;
+            gameState = 'START';
+            paused = false;
+            document.getElementById('duelOver').classList.add('hidden');
+            document.getElementById('startScreen').classList.remove('hidden');
+            document.getElementById('highScore').textContent = highScore;
+            refreshContinueButton();
+            updateUI();
+        }
+
+        function endDuelMatch() {
+            gameState = 'GAME_OVER';
+            stopMusic();
+            // The frozen last frame would otherwise show its round banner behind the results.
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            const winnerIndex = duel.roundWins[0] > duel.roundWins[1] ? 0 : 1;
+            const title = document.getElementById('duelWinnerTitle');
+            title.textContent = 'PLAYER ' + (winnerIndex + 1) + ' WINS THE DUEL!';
+            title.style.color = PLAYER_BEAN_COLORS[winnerIndex].highlight;
+            document.getElementById('duelFinalScore').textContent =
+                'P1  ' + duel.roundWins[0] + ' – ' + duel.roundWins[1] + '  P2';
+            document.getElementById('duelOver').classList.remove('hidden');
+        }
+
+        // Ends the round once at most one bean is left standing.
+        function checkDuelRoundOver() {
+            if (duel.phase !== 'fighting') return;
+            const standing = players.filter(p => !p.dead);
+            if (standing.length > 1) return;
+            duel.roundWinnerIndex = standing.length === 1 ? standing[0].playerIndex : null;
+            if (duel.roundWinnerIndex !== null) duel.roundWins[duel.roundWinnerIndex]++;
+            duel.phase = 'roundOver';
+            duel.phaseStartTime = gameTime;
+            projectiles = [];
+            playSound('powerup');
+        }
+
+        // One hit on a bean: shields and invincibility still protect it, it is knocked away
+        // from the blow, and it can't be hit again until its blinking grace period ends.
+        function duelHit(victim, knockbackDirection) {
+            if (victim.dead || victim.duelHurtTimer > 0) return;
+            victim.duelHurtTimer = DUEL_HURT_SECONDS;
+            victim.vx += knockbackDirection * DUEL_KNOCKBACK_SPEED;
+            victim.vy = Math.min(victim.vy, -6);
+            if (victim.takeDamage()) {
+                victim.health--;
+                playSound('hit');
+                screenShakeX = 15;
+                screenShakeY = 15;
+                for (let i = 0; i < 25; i++) {
+                    particles.push(new Particle(victim.x, victim.y,
+                        i % 2 === 0 ? PLAYER_BEAN_COLORS[victim.playerIndex].highlight : '#ff4444'));
+                }
+                if (victim.health <= 0) victim.dead = true;
+            } else {
+                playSound('powerup');
+                for (let i = 0; i < 20; i++) particles.push(new Particle(victim.x, victim.y, '#0ff'));
+            }
+            updateUI();
+            if (victim.dead) checkDuelRoundOver();
+        }
+
+        // Drops a powerup or heart on a free platform top.
+        function spawnDuelItem() {
+            const itemCount = level.powerupItems.length + level.healthPickups.length;
+            if (itemCount >= DUEL_MAX_ITEMS) return;
+            const occupied = [...level.powerupItems, ...level.healthPickups];
+            const freeSpots = DUEL_ARENA_PLATFORMS
+                .map(plat => ({ x: plat.x + plat.width / 2, y: plat.y - 40 }))
+                .filter(spot => occupied.every(item => Math.hypot(item.x - spot.x, item.y - spot.y) > 40));
+            if (freeSpots.length === 0) return;
+            const spot = freeSpots[Math.floor(Math.random() * freeSpots.length)];
+            if (Math.random() < DUEL_HEALTH_ITEM_CHANCE) {
+                level.healthPickups.push({ x: spot.x, y: spot.y });
+            } else {
+                const type = DUEL_POWERUP_TYPES[Math.floor(Math.random() * DUEL_POWERUP_TYPES.length)];
+                level.powerupItems.push({ x: spot.x, y: spot.y, type });
+            }
+            for (let i = 0; i < 15; i++) particles.push(new Particle(spot.x, spot.y, '#fff'));
+        }
+
+        // Duel rules, run each frame after the beans have moved.
+        function updateDuel(dt) {
+            // Arena walls
+            for (const p of players) {
+                const minX = p.size / 2, maxX = WIDTH - p.size / 2;
+                if (p.x < minX || p.x > maxX) {
+                    p.x = Math.max(minX, Math.min(maxX, p.x));
+                    p.vx = 0;
+                }
+                if (p.duelHurtTimer > 0) p.duelHurtTimer = Math.max(0, p.duelHurtTimer - dt);
+            }
+
+            const phaseElapsed = gameTime - duel.phaseStartTime;
+            if (duel.phase === 'countdown') {
+                if (phaseElapsed >= DUEL_COUNTDOWN_MS) {
+                    duel.phase = 'fighting';
+                    duel.phaseStartTime = gameTime;
+                    duel.lastItemSpawnTime = gameTime;
+                    playSound('powerup');
+                }
+                return;
+            }
+            if (duel.phase === 'roundOver') {
+                if (phaseElapsed >= DUEL_ROUND_OVER_MS) {
+                    if (Math.max(...duel.roundWins) >= DUEL_ROUNDS_TO_WIN) {
+                        endDuelMatch();
+                    } else {
+                        duel.roundNumber++;
+                        startDuelRound();
+                    }
+                }
+                return;
+            }
+
+            // Shots hit the other bean, never the shooter.
+            for (const proj of projectiles) {
+                for (const victim of players) {
+                    if (proj.x < -500 || victim.playerIndex === proj.ownerIndex || victim.dead) continue;
+                    if (Math.abs(proj.x - victim.x) < 30 && Math.abs(proj.y - victim.y) < 30) {
+                        proj.x = -1000;
+                        duelHit(victim, Math.sign(proj.vx) || 1);
+                    }
+                }
+            }
+
+            // Stomp: landing on the other bean's head hits it and bounces the stomper up.
+            for (const attacker of players) {
+                for (const victim of players) {
+                    if (attacker === victim || attacker.dead || victim.dead || attacker.vy <= 2) continue;
+                    const attackerFeetY = attacker.y + attacker.size;
+                    const onHead = Math.abs(attacker.x - victim.x) < victim.size * 0.6 &&
+                        attackerFeetY > victim.y - 50 && attackerFeetY < victim.y - 15;
+                    if (onHead) {
+                        attacker.vy = JUMP_STRENGTH * 0.75;
+                        playSound('jump');
+                        duelHit(victim, Math.sign(victim.x - attacker.x) || 1);
+                    }
+                }
+            }
+
+            if (duel.phase === 'fighting' && gameTime - duel.lastItemSpawnTime >= DUEL_ITEM_SPAWN_MS) {
+                duel.lastItemSpawnTime = gameTime;
+                spawnDuelItem();
+            }
+        }
+
+        // Scoreboard, countdown, and round banners over the arena.
+        function drawDuelOverlay() {
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // Scoreboard: P1 pips · ROUND n · P2 pips
+            const boardY = 36;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+            ctx.fillRect(WIDTH / 2 - 190, boardY - 22, 380, 44);
+            ctx.font = 'bold 22px Arial';
+            ctx.fillStyle = '#fff';
+            ctx.fillText('ROUND ' + duel.roundNumber, WIDTH / 2, boardY);
+            [0, 1].forEach(playerIndex => {
+                const side = playerIndex === 0 ? -1 : 1;
+                const color = PLAYER_BEAN_COLORS[playerIndex].highlight;
+                ctx.fillStyle = color;
+                ctx.fillText('P' + (playerIndex + 1), WIDTH / 2 + side * 160, boardY);
+                for (let pip = 0; pip < DUEL_ROUNDS_TO_WIN; pip++) {
+                    const pipX = WIDTH / 2 + side * (110 - pip * 24);
+                    ctx.beginPath();
+                    ctx.arc(pipX, boardY, 8, 0, Math.PI * 2);
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    if (pip < duel.roundWins[playerIndex]) {
+                        ctx.fillStyle = color;
+                        ctx.fill();
+                    }
+                }
+            });
+
+            const phaseElapsed = gameTime - duel.phaseStartTime;
+            let bannerText = null, bannerColor = '#fff';
+            if (duel.phase === 'countdown') {
+                bannerText = String(Math.ceil((DUEL_COUNTDOWN_MS - phaseElapsed) / 1000));
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(WIDTH / 2 - 380, HEIGHT / 2 + 48, 760, 74);
+                ctx.font = '18px Arial';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.fillText('P1:  A / D move  ·  W jump  ·  X shoot          P2:  ← / → move  ·  ↑ jump  ·  P shoot',
+                    WIDTH / 2, HEIGHT / 2 + 70);
+                ctx.fillText('Jump on your opponent\'s head to stomp them!', WIDTH / 2, HEIGHT / 2 + 100);
+            } else if (duel.phase === 'fighting' && phaseElapsed < DUEL_FIGHT_BANNER_MS) {
+                bannerText = 'FIGHT!';
+                bannerColor = '#ffe27a';
+            } else if (duel.phase === 'roundOver') {
+                if (duel.roundWinnerIndex === null) {
+                    bannerText = 'DRAW!';
+                } else {
+                    bannerText = 'PLAYER ' + (duel.roundWinnerIndex + 1) + ' WINS THE ROUND!';
+                    bannerColor = PLAYER_BEAN_COLORS[duel.roundWinnerIndex].highlight;
+                }
+            }
+            if (bannerText) {
+                ctx.font = 'bold 64px Arial';
+                ctx.lineWidth = 8;
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.strokeText(bannerText, WIDTH / 2, HEIGHT / 2);
+                ctx.fillStyle = bannerColor;
+                ctx.fillText(bannerText, WIDTH / 2, HEIGHT / 2);
+            }
             ctx.restore();
         }
 
@@ -5747,6 +6111,7 @@
             speechText = '';
             resetWardrobe();
             playingCustom = true;
+            playingDuel = false;
             currentLevel = 1;
             coins = 0;
             allies = [];
@@ -6662,7 +7027,7 @@
 
             // What the active slot unlocks next, so there's always something to aim for.
             const activeSlotKey = CLOTHING_SLOTS[wardrobeSlot];
-            const nextLockedItem = CLOTHING[activeSlotKey].items.find(item => score < item.threshold);
+            const nextLockedItem = CLOTHING[activeSlotKey].items.find(item => clothingUnlockScore() < item.threshold);
             ctx.fillStyle = '#8fe0c0';
             ctx.font = '18px Arial';
             ctx.fillText(nextLockedItem
