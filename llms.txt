@@ -1,0 +1,37 @@
+# Greenbean
+
+> Greenbean ("A Side-Scrolling Adventure") is a free side-scrolling platformer that runs in a web browser at https://zeko.games/. You play a green bean who runs, jumps and shoots through 100 levels, with a boss fight every 10 levels and a mini game every 5. It also has 2-player co-op, a 2-player duel mode, a level editor and a bean designer. Written by Zeko Benson.
+
+- Free to play, no account or download. Played with a keyboard (the editors also use a mouse); there are no touch controls.
+- Single-page HTML5 game (Canvas 2D with a WebGL animated background). Sound effects and music are generated in the browser.
+- High score, saved progress, custom levels and bean designs are stored only in the player's own browser (localStorage).
+
+## Controls
+
+- Player 1: WASD or arrow keys to move and jump, X to shoot, C or Down to crouch.
+- S saves progress; CONTINUE on the start screen resumes it.
+- Z opens the coin shop. T talks: type a message and press Enter to show it in a speech bubble.
+- B (Player 1) or G (Player 2) pauses. The pause screen is a wardrobe for changing unlocked clothing.
+- Player 2 drops in by pressing 2 or Enter during play: arrow keys to move and jump, P (or Enter) to shoot.
+- Space triggers "glitch mode" ("REALITY UNSTABLE"), which distorts the screen and spawns extra enemies. The start screen warns: "DON'T PRESS SPACEBAR".
+
+## Campaign
+
+- 100 levels, built procedurally; the goal is to reach the end of each level. Beating level 100 wins the game.
+- Boss fights on levels 10, 20, ... 100: The Chef, The Inferno, The Frost Golem, The Swarm Queen, The Volt, The Shadow, and The Final Bean on level 100.
+- Mini games on levels 5, 15, 25, ... 95, rotating between Target Shooting, Collectible Rush, Survival Wave and a Platforming Challenge.
+- Enemy types: normal, fast, tank, flyer, jumper and shooter.
+- Power-ups: speed, double jump, shield, rapid fire, zero gravity, Big Boy, enemy sleep, invincibility, magnet, and a rare mega power-up.
+- Coins come from pickups and defeated enemies. The shop sells ally drones (Blaster, Rapid, Sniper), healing and power-ups.
+- Reaching score milestones unlocks clothing in five slots (hats, eyewear, neckwear, back items such as capes and wings, and shoes).
+
+## Other modes
+
+- Duel: Player 1 versus Player 2 in an arena, best of three rounds; hit the other bean by shooting or stomping.
+- Make Your Own Level: place platforms, enemies, coins, power-ups, health, the start and the goal, then play the level. One custom level can be saved.
+- Design Your Bean: paint a pixel-art look for each player's bean with pen, eraser, fill, color picker and mirror tools, then choose whether to wear it in game.
+
+## Optional
+
+- [Play Greenbean](https://zeko.games/): The game.
+- [Source code](https://github.com/drewster99/Zeko-Games): Public GitHub repository.
