@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -4 32 32">
+  <!-- The top of the classic Player 1 bean, drawn with the geometry and colors Player.draw uses at PLAYER_SIZE 40, translated so the body top is y=0. -->
+  <defs>
+    <linearGradient id="light" x1="0" y1="0" x2="0" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity=".35"/>
+      <stop offset=".3" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".7" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".38"/>
+    </linearGradient>
+  </defs>
+  <rect x="-16" y="-4" width="32" height="32" rx="5" fill="#000"/>
+  <rect x="-12" y="0" width="24" height="80" fill="#2d5016"/>
+  <rect x="-12" y="0" width="24" height="80" fill="url(#light)"/>
+  <rect x="-12" y="0" width="24" height="12" fill="#6fb33f"/>
+  <ellipse cx="-3.84" cy="6" rx="6.24" ry="6" fill="#fff" fill-opacity=".22"/>
+  <g fill="#fff">
+    <circle cx="-8" cy="15" r="5"/>
+    <circle cx="8" cy="15" r="5"/>
+  </g>
+  <g fill="#000">
+    <circle cx="-8" cy="15" r="2"/>
+    <circle cx="8" cy="15" r="2"/>
+  </g>
+</svg>
