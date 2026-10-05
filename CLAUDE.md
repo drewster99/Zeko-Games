@@ -189,3 +189,7 @@ The game runs at 60 FPS via `requestAnimationFrame()`:
 **Visual themes**: Edit shader `u_levelTheme` uniform usage in fragment shader, or modify particle colors in collision code
 
 **Boss battles**: Bosses appear every 10 levels. They are blue, spawn minions, have 3 phases, and stay within arena bounds (x: 100-1100)
+
+## Hosting
+
+zeko.games is served by the assets-only Cloudflare Worker `zeko-games-website` (`wrangler.jsonc`), deployed by Workers Builds on every push to `main` with `npx wrangler deploy`. It moved off Cloudflare Pages on 2026-10-04 because Pages cannot keep repo files private; `.assetsignore` lists the files that must not be published (this file, `.claude/`, `.github/`, `__PUBLIC_REPO`). Add any new non-game file there.
